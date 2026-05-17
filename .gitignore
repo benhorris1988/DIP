@@ -18,6 +18,8 @@ node_modules/
 .pnpm-store/
 dist/
 .vite/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
 
 # Local DB / data
 *.db
