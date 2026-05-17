@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,38 +9,13 @@ import '../theme/colors.dart';
 import '../util/format.dart';
 import '../widgets/ui/status_pill.dart';
 
-class JobDetailPage extends ConsumerStatefulWidget {
+class JobDetailPage extends ConsumerWidget {
   const JobDetailPage({super.key, required this.id});
   final String id;
 
   @override
-  ConsumerState<JobDetailPage> createState() => _JobDetailPageState();
-}
-
-class _JobDetailPageState extends ConsumerState<JobDetailPage> {
-  Timer? _poll;
-
-  @override
-  void initState() {
-    super.initState();
-    _poll = Timer.periodic(const Duration(seconds: 3), (_) {
-      final state = ref.read(jobProvider(widget.id));
-      final s = state.value?.status;
-      if (s == 'running' || s == 'pending') {
-        ref.invalidate(jobProvider(widget.id));
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _poll?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final jobAsync = ref.watch(jobProvider(widget.id));
+  Widget build(BuildContext context, WidgetRef ref) {
+    final jobAsync = ref.watch(jobStreamProvider(id));
     return jobAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('$e')),

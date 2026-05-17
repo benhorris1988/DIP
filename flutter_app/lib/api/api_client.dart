@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -152,6 +155,87 @@ class ApiClient {
   Future<Job> job(String id) async {
     final r = await _dio.get('/jobs/$id');
     return Job.fromJson(r.data as Map<String, dynamic>);
+  }
+
+  Stream<Job> streamJob(String id) =>
+      _sseJobs(path: '/jobs/$id/stream');
+
+  Stream<Job> streamAllJobs() => _sseJobs(path: '/jobs/stream');
+
+  /// Opens an SSE stream, decodes each ``event: job\ndata: {...}\n\n`` frame
+  /// into a [Job], and emits them on a broadcast stream. Heartbeats
+  /// (``:`` comment lines) are ignored. The stream closes when the
+  /// underlying response stream ends or the subscription is cancelled.
+  Stream<Job> _sseJobs({required String path}) {
+    final controller = StreamController<Job>.broadcast();
+    final cancelToken = CancelToken();
+    StreamSubscription<List<int>>? sub;
+
+    controller.onListen = () async {
+      try {
+        final r = await _dio.get<ResponseBody>(
+          path,
+          options: Options(
+            responseType: ResponseType.stream,
+            headers: const {'Accept': 'text/event-stream'},
+          ),
+          cancelToken: cancelToken,
+        );
+        final body = r.data;
+        if (body == null) {
+          await controller.close();
+          return;
+        }
+        var buffer = '';
+        sub = body.stream.listen(
+          (bytes) {
+            buffer += utf8.decode(bytes, allowMalformed: true);
+            while (true) {
+              final ix = buffer.indexOf('\n\n');
+              if (ix < 0) break;
+              final raw = buffer.substring(0, ix);
+              buffer = buffer.substring(ix + 2);
+              final event = _parseSse(raw);
+              if (event == null) continue;
+              try {
+                final decoded = json.decode(event) as Map<String, dynamic>;
+                controller.add(Job.fromJson(decoded));
+              } catch (e, s) {
+                controller.addError(e, s);
+              }
+            }
+          },
+          onError: controller.addError,
+          onDone: () => controller.close(),
+          cancelOnError: false,
+        );
+      } catch (e, s) {
+        controller.addError(e, s);
+        await controller.close();
+      }
+    };
+
+    controller.onCancel = () async {
+      await sub?.cancel();
+      if (!cancelToken.isCancelled) cancelToken.cancel('listener cancelled');
+    };
+
+    return controller.stream;
+  }
+
+  String? _parseSse(String raw) {
+    // SSE frames are line-based: ``event: foo`` and ``data: bar`` pairs.
+    // ``:`` lines are comments (heartbeats) and ignored.
+    final lines = raw.split('\n');
+    final data = StringBuffer();
+    for (final line in lines) {
+      if (line.isEmpty || line.startsWith(':')) continue;
+      if (line.startsWith('data:')) {
+        if (data.isNotEmpty) data.write('\n');
+        data.write(line.substring(5).trimLeft());
+      }
+    }
+    return data.isEmpty ? null : data.toString();
   }
 
   Future<Stats> stats() async {

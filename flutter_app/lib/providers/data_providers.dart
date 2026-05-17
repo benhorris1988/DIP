@@ -57,6 +57,20 @@ final jobProvider = FutureProvider.family<Job, String>((ref, id) async {
   return ref.read(apiClientProvider).job(id);
 });
 
+/// Live job feed from the backend SSE endpoint.
+///
+/// Resolves the initial snapshot via REST so the UI never shows an empty
+/// shell, then merges every SSE update on top. The stream stays open until
+/// the consumer disposes — Riverpod cancels the subscription for us.
+final jobStreamProvider =
+    StreamProvider.family<Job, String>((ref, id) async* {
+  final api = ref.read(apiClientProvider);
+  yield await api.job(id);
+  await for (final j in api.streamJob(id)) {
+    yield j;
+  }
+});
+
 final statsProvider = FutureProvider<Stats>((ref) async {
   return ref.read(apiClientProvider).stats();
 });
