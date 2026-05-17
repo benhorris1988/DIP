@@ -1,0 +1,136 @@
+# Data Integration Platform (DIP)
+
+An extensible enterprise data integration platform. Connect heterogeneous source
+systems (initially SAP OData, Oracle) to modern destinations (initially
+SurrealDB, Microsoft SQL Server) through declaratively configured pipelines, and
+monitor every job run from a single console.
+
+## Architecture
+
+```
+┌──────────────┐      ┌────────────────────────────────────┐      ┌──────────────────┐
+│              │      │  FastAPI backend                   │      │                  │
+│   React UI   │ <──> │  ┌──────────────────────────────┐  │ <──> │  Source systems  │
+│  (Vite/TS)   │      │  │ Connector registry           │  │      │  (SAP, Oracle…)  │
+│              │      │  │  • sources/  • destinations/ │  │      │                  │
+└──────────────┘      │  └──────────────────────────────┘  │      ├──────────────────┤
+                      │  Pipelines • Jobs • Scheduler      │      │  Destinations    │
+                      └────────────────────────────────────┘      │  (SurrealDB,     │
+                                                                  │   MSSQL, …)      │
+                                                                  └──────────────────┘
+```
+
+* **Backend** — Python FastAPI with an async SQLAlchemy metadata store, a
+  connector plugin registry, and a pipeline runner that streams batches from a
+  source connector to a destination connector.
+* **Frontend** — React + TypeScript + Vite + Tailwind admin UI inspired by
+  Connector Express: Dashboard, Connections, Pipelines, Job Runs, Settings.
+* **Connectors today**
+  * Sources: `sap_odata`, `oracle`
+  * Destinations: `surrealdb`, `mssql`
+* **Roadmap connectors** — Microsoft Fabric, Databricks, Snowflake, generic
+  REST/Webhook, S3/Blob. Adding one is a single file under
+  `backend/app/connectors/{sources,destinations}/`.
+
+## Extending with a new connector
+
+1. Create a new module in `backend/app/connectors/sources/` (or `destinations/`).
+2. Subclass `SourceConnector` or `DestinationConnector` from
+   `app.connectors.base`.
+3. Define `metadata` (a `ConnectorMetadata`) describing config and secret
+   fields — these power the dynamic UI form.
+4. Decorate the class with `@registry.register` and import it from
+   `app/connectors/__init__.py`.
+
+The frontend automatically picks up the new connector via `GET /api/connectors`
+and renders the configuration form from the metadata schema.
+
+## Running locally
+
+### Prerequisites
+* Python 3.11+
+* Node 20+
+* (Optional) Docker for one-command bring-up
+* (Optional) The Microsoft ODBC Driver 18 if you intend to use the MSSQL
+  destination from your host
+
+### Quick start (Docker)
+
+```bash
+docker compose up --build
+```
+
+* Backend → http://localhost:8000 (Swagger UI at `/docs`)
+* Frontend → http://localhost:5173
+* SurrealDB → ws://localhost:8001/rpc
+
+### Quick start (native)
+
+```bash
+make install
+# terminal 1
+make backend
+# terminal 2
+make frontend
+```
+
+The Vite dev server proxies `/api` to `http://localhost:8000`, so you can open
+http://localhost:5173 and start creating connections.
+
+## Project layout
+
+```
+DIP/
+├── backend/
+│   ├── app/
+│   │   ├── api/routes/        # FastAPI routers: connections, pipelines, jobs, connectors
+│   │   ├── connectors/        # Pluggable connector framework
+│   │   │   ├── base.py        # SourceConnector / DestinationConnector ABCs
+│   │   │   ├── registry.py    # Decorator-based registry
+│   │   │   ├── sources/       # sap_odata, oracle
+│   │   │   └── destinations/  # surrealdb, mssql
+│   │   ├── db/                # Async SQLAlchemy session + Base
+│   │   ├── models/            # ORM models: Connection, Pipeline, Job
+│   │   ├── schemas/           # Pydantic request/response models
+│   │   ├── services/runner.py # Pipeline execution engine
+│   │   └── main.py            # App entry / lifespan
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/
+│   ├── src/
+│   │   ├── components/        # Layout, UI primitives, ConnectorIcon
+│   │   ├── pages/             # Dashboard, Connections, Pipelines, Jobs, Settings
+│   │   ├── lib/api.ts         # Typed API client
+│   │   └── types/             # Shared TS types
+│   └── ...
+└── docker-compose.yml
+```
+
+## API
+
+All endpoints are mounted at `/api`:
+
+| Method | Path                              | Purpose                          |
+| ------ | --------------------------------- | -------------------------------- |
+| GET    | `/api/health`                     | Health check                     |
+| GET    | `/api/connectors`                 | List installed connector types   |
+| GET    | `/api/connections`                | List connections                 |
+| POST   | `/api/connections`                | Create connection                |
+| POST   | `/api/connections/{id}/test`      | Probe the underlying system      |
+| GET    | `/api/connections/{id}/objects`   | List tables / entity sets        |
+| GET    | `/api/pipelines`                  | List pipelines                   |
+| POST   | `/api/pipelines`                  | Create pipeline                  |
+| POST   | `/api/pipelines/{id}/run`         | Trigger a pipeline run           |
+| GET    | `/api/jobs`                       | List recent job runs             |
+| GET    | `/api/jobs/stats`                 | Aggregate metrics for dashboard  |
+| GET    | `/api/jobs/{id}`                  | Job detail with log              |
+
+## Notes
+
+* Mock SAP OData and Oracle source systems are intentionally **not** included —
+  they are produced by a separate workstream and will be configured via the
+  Connections page when available.
+* Secrets are stored in the metadata DB. For production deployments, swap
+  `Connection.secrets` for an external secret manager (Vault / Key Vault / AWS
+  Secrets Manager) — the registry already separates `config` and `secrets` for
+  this reason.
