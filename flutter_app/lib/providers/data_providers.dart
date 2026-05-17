@@ -1,0 +1,74 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../api/api_client.dart';
+import '../api/models.dart';
+
+final apiClientProvider = Provider<ApiClient>((_) => ApiClient());
+
+final connectorsProvider = FutureProvider<List<ConnectorMetadata>>((ref) async {
+  return ref.read(apiClientProvider).connectors();
+});
+
+final connectionsProvider = FutureProvider<List<Connection>>((ref) async {
+  return ref.read(apiClientProvider).connections();
+});
+
+final connectionProvider =
+    FutureProvider.family<Connection, String>((ref, id) async {
+  return ref.read(apiClientProvider).connection(id);
+});
+
+final pipelinesProvider = FutureProvider<List<Pipeline>>((ref) async {
+  return ref.read(apiClientProvider).pipelines();
+});
+
+final pipelineProvider =
+    FutureProvider.family<Pipeline, String>((ref, id) async {
+  return ref.read(apiClientProvider).pipeline(id);
+});
+
+class JobsQuery {
+  final String? pipelineId;
+  final String? status;
+  final int limit;
+  const JobsQuery({this.pipelineId, this.status, this.limit = 100});
+
+  @override
+  bool operator ==(Object other) =>
+      other is JobsQuery &&
+      other.pipelineId == pipelineId &&
+      other.status == status &&
+      other.limit == limit;
+
+  @override
+  int get hashCode => Object.hash(pipelineId, status, limit);
+}
+
+final jobsProvider =
+    FutureProvider.family<List<Job>, JobsQuery>((ref, q) async {
+  return ref.read(apiClientProvider).jobs(
+        pipelineId: q.pipelineId,
+        status: q.status,
+        limit: q.limit,
+      );
+});
+
+final jobProvider = FutureProvider.family<Job, String>((ref, id) async {
+  return ref.read(apiClientProvider).job(id);
+});
+
+final statsProvider = FutureProvider<Stats>((ref) async {
+  return ref.read(apiClientProvider).stats();
+});
+
+final healthProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  return ref.read(apiClientProvider).health();
+});
+
+/// Convenience: invalidate the data providers a write would affect.
+void invalidateAll(WidgetRef ref) {
+  ref.invalidate(connectionsProvider);
+  ref.invalidate(pipelinesProvider);
+  ref.invalidate(jobsProvider);
+  ref.invalidate(statsProvider);
+}
