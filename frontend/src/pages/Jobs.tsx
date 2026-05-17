@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Job } from "@/types";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { StatusPill } from "@/components/ui/StatusPill";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, formatDuration } from "@/lib/utils";
 
@@ -20,27 +20,31 @@ export function Jobs() {
   });
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Job runs</h2>
-          <p className="text-sm text-slate-500">Recent executions of your pipelines.</p>
+          <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+            Batches
+          </h2>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Recent executions across all pipelines.
+          </p>
         </div>
         <button className="btn-secondary" onClick={() => q.refetch()}>
-          <RefreshCw size={14} /> Refresh
+          <RefreshCw size={13} /> Refresh
         </button>
       </div>
 
-      <div className="flex gap-1 rounded-lg bg-slate-200/60 p-1 w-fit">
+      <div className="flex gap-1 rounded-lg bg-zinc-200/60 p-1 w-fit dark:bg-zinc-800/60">
         {statuses.map((s) => (
           <button
             key={s}
             onClick={() => setStatus(s)}
             className={
-              "px-3 py-1.5 text-sm font-medium rounded-md capitalize " +
+              "px-3 py-1 text-xs font-medium rounded-md capitalize " +
               (status === s
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-600 hover:text-slate-900")
+                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100"
+                : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100")
             }
           >
             {s}
@@ -50,43 +54,59 @@ export function Jobs() {
 
       {q.data?.length ? (
         <div className="card overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+          <table className="w-full text-[12px]">
+            <thead className="bg-zinc-50 text-left text-[10px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900/40 dark:text-zinc-400">
               <tr>
-                <th className="px-5 py-3">Pipeline</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3 text-right">Rows read</th>
-                <th className="px-5 py-3 text-right">Rows written</th>
-                <th className="px-5 py-3 text-right">Duration</th>
-                <th className="px-5 py-3">Triggered</th>
-                <th className="px-5 py-3">Started</th>
+                <th className="px-4 py-2">Batch</th>
+                <th className="px-4 py-2">Pipeline</th>
+                <th className="px-4 py-2">Status</th>
+                <th className="px-4 py-2 text-right">Rows read</th>
+                <th className="px-4 py-2 text-right">Rows written</th>
+                <th className="px-4 py-2 text-right">Duration</th>
+                <th className="px-4 py-2">Triggered</th>
+                <th className="px-4 py-2">Started</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {q.data.map((j) => (
-                <tr key={j.id} className="hover:bg-slate-50">
-                  <td className="px-5 py-3">
+                <tr
+                  key={j.id}
+                  className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                >
+                  <td className="px-4 py-2">
                     <Link
                       to={`/jobs/${j.id}`}
-                      className="font-medium text-slate-900 hover:text-brand-600"
+                      className="font-mono text-zinc-700 hover:text-bifrost-purple dark:text-zinc-300"
+                    >
+                      {j.id.slice(0, 8)}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2">
+                    <Link
+                      to={`/pipelines/${j.pipeline_id}`}
+                      className="font-mono text-zinc-900 hover:text-bifrost-purple dark:text-zinc-100"
                     >
                       {j.pipeline_name}
                     </Link>
                   </td>
-                  <td className="px-5 py-3">
-                    <StatusBadge status={j.status} />
+                  <td className="px-4 py-2">
+                    <StatusPill status={j.status} />
                   </td>
-                  <td className="px-5 py-3 text-right tabular-nums">
+                  <td className="px-4 py-2 text-right tabular-nums">
                     {j.rows_read.toLocaleString()}
                   </td>
-                  <td className="px-5 py-3 text-right tabular-nums">
+                  <td className="px-4 py-2 text-right tabular-nums">
                     {j.rows_written.toLocaleString()}
                   </td>
-                  <td className="px-5 py-3 text-right tabular-nums">
+                  <td className="px-4 py-2 text-right tabular-nums">
                     {formatDuration(j.duration_ms)}
                   </td>
-                  <td className="px-5 py-3 capitalize text-slate-600">{j.triggered_by}</td>
-                  <td className="px-5 py-3 text-slate-500">{formatDate(j.started_at)}</td>
+                  <td className="px-4 py-2 capitalize text-zinc-600 dark:text-zinc-300">
+                    {j.triggered_by}
+                  </td>
+                  <td className="px-4 py-2 text-zinc-500">
+                    {formatDate(j.started_at)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -95,8 +115,8 @@ export function Jobs() {
       ) : (
         <EmptyState
           icon={Activity}
-          title="No job runs"
-          description="Trigger a pipeline to see runs appear here."
+          title="No batches yet"
+          description="Trigger a pipeline to see batch runs appear here."
         />
       )}
     </div>

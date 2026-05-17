@@ -9,54 +9,71 @@
     height: 100%;
   }
   body {
-    @apply text-slate-800 antialiased;
+    @apply text-[13px] text-zinc-800 antialiased bg-zinc-50;
+  }
+  .dark body {
+    @apply text-zinc-200 bg-zinc-950;
   }
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm
-      font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5
+      text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+    @apply btn text-white bg-bifrost-gradient hover:opacity-90 shadow-sm;
   }
   .btn-secondary {
-    @apply btn bg-white text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50;
+    @apply btn bg-white text-zinc-700 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50
+      dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800;
   }
   .btn-ghost {
-    @apply btn text-slate-700 hover:bg-slate-100;
+    @apply btn text-zinc-700 hover:bg-zinc-100
+      dark:text-zinc-300 dark:hover:bg-zinc-800;
   }
   .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700;
+    @apply btn bg-rose-600 text-white hover:bg-rose-700;
   }
   .input {
-    @apply block w-full rounded-md border-0 px-3 py-2 text-sm text-slate-900
-      ring-1 ring-inset ring-slate-300 placeholder:text-slate-400
-      focus:ring-2 focus:ring-inset focus:ring-brand-600;
+    @apply block w-full rounded-md border-0 px-2.5 py-1.5 text-xs text-zinc-900
+      ring-1 ring-inset ring-zinc-300 placeholder:text-zinc-400
+      focus:ring-2 focus:ring-inset focus:ring-bifrost-purple bg-white
+      dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700;
   }
   .label {
-    @apply block text-sm font-medium text-slate-700 mb-1;
+    @apply block text-[11px] font-medium uppercase tracking-wide text-zinc-500 mb-1
+      dark:text-zinc-400;
   }
   .card {
-    @apply rounded-lg border border-slate-200 bg-white shadow-sm;
+    @apply rounded-xl border border-zinc-200 bg-white shadow-sm
+      dark:border-zinc-800 dark:bg-zinc-900/60;
   }
-  .badge {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+  .pill {
+    @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium
+      uppercase tracking-wider ring-1 ring-inset;
   }
-  .badge-green {
-    @apply badge bg-green-100 text-green-800;
+  .pill-emerald {
+    @apply pill bg-emerald-50 text-emerald-700 ring-emerald-200
+      dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30;
   }
-  .badge-red {
-    @apply badge bg-red-100 text-red-800;
+  .pill-amber {
+    @apply pill bg-amber-50 text-amber-700 ring-amber-200
+      dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30;
   }
-  .badge-amber {
-    @apply badge bg-amber-100 text-amber-800;
+  .pill-rose {
+    @apply pill bg-rose-50 text-rose-700 ring-rose-200
+      dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/30;
   }
-  .badge-slate {
-    @apply badge bg-slate-100 text-slate-700;
+  .pill-zinc {
+    @apply pill bg-zinc-100 text-zinc-700 ring-zinc-200
+      dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700;
   }
-  .badge-blue {
-    @apply badge bg-brand-100 text-brand-800;
+  .pill-violet {
+    @apply pill bg-violet-50 text-violet-700 ring-violet-200
+      dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/30;
+  }
+  .status-dot {
+    @apply inline-block h-2 w-2 rounded-full;
   }
 }

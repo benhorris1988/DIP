@@ -110,17 +110,17 @@ export function ConnectionForm() {
       <button onClick={() => navigate(-1)} className="btn-ghost mb-4 -ml-2">
         <ArrowLeft size={16} /> Back
       </button>
-      <h2 className="text-2xl font-semibold text-slate-900">
+      <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
         {isEdit ? "Edit connection" : "New connection"}
       </h2>
-      <p className="text-sm text-slate-500 mb-6">
+      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
         Configure how the platform connects to your source or destination system.
       </p>
 
       <form onSubmit={onSubmit} className="flex flex-col gap-6">
         {!isEdit && (
           <section className="card p-5">
-            <div className="mb-4 flex gap-1 rounded-lg bg-slate-100 p-1 w-fit">
+            <div className="mb-4 flex gap-1 rounded-lg bg-zinc-200/60 dark:bg-zinc-800/60 p-1 w-fit">
               {(["source", "destination"] as Role[]).map((r) => (
                 <button
                   key={r}
@@ -129,8 +129,8 @@ export function ConnectionForm() {
                   className={
                     "px-3 py-1.5 text-sm font-medium rounded-md " +
                     (form.role === r
-                      ? "bg-white text-slate-900 shadow-sm"
-                      : "text-slate-600")
+                      ? "bg-white text-zinc-900 dark:text-zinc-100 shadow-sm"
+                      : "text-zinc-600 dark:text-zinc-400")
                   }
                 >
                   {r === "source" ? "Source" : "Destination"}
@@ -147,14 +147,14 @@ export function ConnectionForm() {
                   className={
                     "flex items-start gap-3 rounded-lg border p-3 text-left transition-colors " +
                     (form.connector_type === c.type
-                      ? "border-brand-500 bg-brand-50/50"
-                      : "border-slate-200 hover:border-slate-300")
+                      ? "border-bifrost-purple bg-violet-50/50 dark:bg-violet-500/10"
+                      : "border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700")
                   }
                 >
                   <ConnectorIcon icon={c.icon} size={36} />
                   <div>
-                    <div className="font-medium text-slate-900">{c.label}</div>
-                    <div className="text-xs text-slate-500">{c.description}</div>
+                    <div className="font-medium text-zinc-900 dark:text-zinc-100">{c.label}</div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">{c.description}</div>
                   </div>
                 </button>
               ))}
@@ -165,7 +165,7 @@ export function ConnectionForm() {
         {form.connector_type && (
           <>
             <section className="card p-5">
-              <h3 className="font-semibold text-slate-900">Details</h3>
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Details</h3>
               <div className="mt-4 grid grid-cols-1 gap-4">
                 <div>
                   <label className="label">Name</label>
@@ -189,7 +189,7 @@ export function ConnectionForm() {
             </section>
 
             <section className="card p-5">
-              <h3 className="font-semibold text-slate-900">Configuration</h3>
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Configuration</h3>
               <div className="mt-4 grid grid-cols-1 gap-4">
                 {currentMeta?.config_schema.map((f) => (
                   <FieldInput
@@ -203,9 +203,9 @@ export function ConnectionForm() {
             </section>
 
             <section className="card p-5">
-              <h3 className="font-semibold text-slate-900">Credentials</h3>
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Credentials</h3>
               {isEdit && (
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                   Leave blank to keep the existing credentials.
                 </p>
               )}
@@ -276,11 +276,11 @@ function FieldInput({
       <label className="flex items-center gap-2">
         <input
           type="checkbox"
-          className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+          className="h-4 w-4 rounded border-zinc-300 text-bifrost-purple focus:ring-bifrost-purple dark:border-zinc-700"
           checked={Boolean(value ?? field.default)}
           onChange={(e) => onChange(e.target.checked)}
         />
-        <span className="text-sm text-slate-700">{field.label}</span>
+        <span className="text-sm text-zinc-700 dark:text-zinc-300">{field.label}</span>
       </label>
     );
   }

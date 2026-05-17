@@ -129,16 +129,16 @@ export function PipelineForm() {
       <button onClick={() => navigate(-1)} className="btn-ghost mb-4 -ml-2">
         <ArrowLeft size={16} /> Back
       </button>
-      <h2 className="text-2xl font-semibold text-slate-900">
+      <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
         {isEdit ? "Edit pipeline" : "New pipeline"}
       </h2>
-      <p className="text-sm text-slate-500 mb-6">
+      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
         Pipelines move data from a source object to a destination object.
       </p>
 
       <form onSubmit={onSubmit} className="flex flex-col gap-6">
         <section className="card p-5">
-          <h3 className="font-semibold text-slate-900">Overview</h3>
+          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Overview</h3>
           <div className="mt-4 grid grid-cols-1 gap-4">
             <div>
               <label className="label">Name</label>
@@ -162,7 +162,7 @@ export function PipelineForm() {
         </section>
 
         <section className="card p-5">
-          <h3 className="font-semibold text-slate-900">Source &amp; destination</h3>
+          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Source &amp; destination</h3>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-start">
             <div className="space-y-3">
               <label className="label">Source connection</label>
@@ -190,13 +190,13 @@ export function PipelineForm() {
                 placeholder={srcConn ? "Select entity / table" : "Select source first"}
               />
               {srcConn && (
-                <div className="flex items-center gap-2 text-xs text-slate-500">
+                <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
                   <ConnectorIcon icon={srcConn.connector_type.split("_")[0]} size={20} />
                   {srcConn.name}
                 </div>
               )}
             </div>
-            <div className="hidden md:flex h-full items-center justify-center pt-8 text-slate-400">
+            <div className="hidden md:flex h-full items-center justify-center pt-8 text-zinc-400">
               <ArrowRight />
             </div>
             <div className="space-y-3">
@@ -230,7 +230,7 @@ export function PipelineForm() {
                 placeholder={dstConn ? "Select or type table name" : "Select destination first"}
               />
               {dstConn && (
-                <div className="flex items-center gap-2 text-xs text-slate-500">
+                <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
                   <ConnectorIcon icon={dstConn.connector_type.split("_")[0]} size={20} />
                   {dstConn.name}
                 </div>
@@ -240,7 +240,7 @@ export function PipelineForm() {
         </section>
 
         <section className="card p-5">
-          <h3 className="font-semibold text-slate-900">Settings</h3>
+          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Settings</h3>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <label className="label">Mode</label>
@@ -265,23 +265,23 @@ export function PipelineForm() {
             <label className="flex items-center gap-2 pt-7">
               <input
                 type="checkbox"
-                className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                className="h-4 w-4 rounded border-zinc-300 text-bifrost-purple focus:ring-bifrost-purple dark:border-zinc-700"
                 checked={form.enabled}
                 onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
               />
-              <span className="text-sm text-slate-700">Enabled</span>
+              <span className="text-sm text-zinc-700 dark:text-zinc-300">Enabled</span>
             </label>
           </div>
         </section>
 
         <section className="card p-5">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-slate-900">Field mappings</h3>
+            <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Field mappings</h3>
             <button type="button" className="btn-secondary" onClick={addMapping}>
               <Plus size={14} /> Add mapping
             </button>
           </div>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             Leave empty to pass all source fields through unchanged.
           </p>
           {form.field_mappings.length > 0 && (
@@ -294,7 +294,7 @@ export function PipelineForm() {
                     value={m.source}
                     onChange={(e) => updateMapping(i, { source: e.target.value })}
                   />
-                  <ArrowRight size={14} className="text-slate-400" />
+                  <ArrowRight size={14} className="text-zinc-400" />
                   <input
                     className="input"
                     placeholder="Destination field"
