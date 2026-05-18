@@ -145,6 +145,8 @@ class Pipeline {
   final bool enabled;
   final String? incrementalField;
   final List<FieldMapping> fieldMappings;
+  final String definitionSource;
+  final String? definitionPath;
   final String createdAt;
   final String updatedAt;
 
@@ -161,9 +163,13 @@ class Pipeline {
     required this.enabled,
     required this.incrementalField,
     required this.fieldMappings,
+    required this.definitionSource,
+    required this.definitionPath,
     required this.createdAt,
     required this.updatedAt,
   });
+
+  bool get isYamlManaged => definitionSource == 'yaml';
 
   factory Pipeline.fromJson(Map<String, dynamic> j) => Pipeline(
         id: j['id'] as String,
@@ -180,6 +186,8 @@ class Pipeline {
         fieldMappings: (j['field_mappings'] as List? ?? [])
             .map((e) => FieldMapping.fromJson(e as Map<String, dynamic>))
             .toList(),
+        definitionSource: (j['definition_source'] ?? 'ui') as String,
+        definitionPath: j['definition_path'] as String?,
         createdAt: (j['created_at'] ?? '') as String,
         updatedAt: (j['updated_at'] ?? '') as String,
       );
@@ -244,6 +252,168 @@ class Job {
         log: (j['log'] as List? ?? [])
             .map((e) => JobLogEntry.fromJson(e as Map<String, dynamic>))
             .toList(),
+      );
+}
+
+class AssetWithStatus {
+  final String id;
+  final String key;
+  final String? description;
+  final String pipelineId;
+  final String? pipelineName;
+  final String? connectionId;
+  final String? objectName;
+  final List<String> dependsOn;
+  final Map<String, dynamic> metadata;
+  final String? definitionPath;
+  final String? lastMaterializedAt;
+  final String? lastJobId;
+  final String? lastStatus;
+  final int? rowsWritten;
+
+  AssetWithStatus({
+    required this.id,
+    required this.key,
+    required this.description,
+    required this.pipelineId,
+    required this.pipelineName,
+    required this.connectionId,
+    required this.objectName,
+    required this.dependsOn,
+    required this.metadata,
+    required this.definitionPath,
+    required this.lastMaterializedAt,
+    required this.lastJobId,
+    required this.lastStatus,
+    required this.rowsWritten,
+  });
+
+  factory AssetWithStatus.fromJson(Map<String, dynamic> j) => AssetWithStatus(
+        id: j['id'] as String,
+        key: j['key'] as String,
+        description: j['description'] as String?,
+        pipelineId: j['pipeline_id'] as String,
+        pipelineName: j['pipeline_name'] as String?,
+        connectionId: j['connection_id'] as String?,
+        objectName: j['object_name'] as String?,
+        dependsOn:
+            (j['depends_on'] as List? ?? const []).map((e) => e.toString()).toList(),
+        metadata:
+            Map<String, dynamic>.from(j['asset_metadata'] as Map? ?? const {}),
+        definitionPath: j['definition_path'] as String?,
+        lastMaterializedAt: j['last_materialized_at'] as String?,
+        lastJobId: j['last_job_id'] as String?,
+        lastStatus: j['last_status'] as String?,
+        rowsWritten: j['rows_written'] as int?,
+      );
+}
+
+class AssetGraph {
+  final List<List<String>> layers;
+  final List<AssetWithStatus> nodes;
+
+  AssetGraph({required this.layers, required this.nodes});
+
+  factory AssetGraph.fromJson(Map<String, dynamic> j) => AssetGraph(
+        layers: (j['layers'] as List? ?? const [])
+            .map<List<String>>(
+              (row) =>
+                  (row as List).map((e) => e.toString()).toList(),
+            )
+            .toList(),
+        nodes: (j['nodes'] as List? ?? const [])
+            .map((e) => AssetWithStatus.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class AssetMaterializationRecord {
+  final String id;
+  final String assetKey;
+  final String jobId;
+  final String pipelineId;
+  final String? dagRunId;
+  final int rowsWritten;
+  final String ts;
+
+  AssetMaterializationRecord({
+    required this.id,
+    required this.assetKey,
+    required this.jobId,
+    required this.pipelineId,
+    required this.dagRunId,
+    required this.rowsWritten,
+    required this.ts,
+  });
+
+  factory AssetMaterializationRecord.fromJson(Map<String, dynamic> j) =>
+      AssetMaterializationRecord(
+        id: j['id'] as String,
+        assetKey: j['asset_key'] as String,
+        jobId: j['job_id'] as String,
+        pipelineId: j['pipeline_id'] as String,
+        dagRunId: j['dag_run_id'] as String?,
+        rowsWritten: (j['rows_written'] ?? 0) as int,
+        ts: j['ts'] as String,
+      );
+}
+
+class DefinitionsReport {
+  final String directory;
+  final int pipelinesTotal;
+  final int assetsTotal;
+  final int errors;
+  final List<String> removedPipelines;
+  final List<DefinitionsEntry> entries;
+
+  DefinitionsReport({
+    required this.directory,
+    required this.pipelinesTotal,
+    required this.assetsTotal,
+    required this.errors,
+    required this.removedPipelines,
+    required this.entries,
+  });
+
+  factory DefinitionsReport.fromJson(Map<String, dynamic> j) =>
+      DefinitionsReport(
+        directory: (j['directory'] ?? '') as String,
+        pipelinesTotal: (j['pipelines_total'] ?? 0) as int,
+        assetsTotal: (j['assets_total'] ?? 0) as int,
+        errors: (j['errors'] ?? 0) as int,
+        removedPipelines: (j['removed_pipelines'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        entries: (j['entries'] as List? ?? const [])
+            .map((e) => DefinitionsEntry.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class DefinitionsEntry {
+  final String path;
+  final String? pipeline;
+  final List<String> assets;
+  final String action;
+  final String? error;
+
+  DefinitionsEntry({
+    required this.path,
+    required this.pipeline,
+    required this.assets,
+    required this.action,
+    required this.error,
+  });
+
+  factory DefinitionsEntry.fromJson(Map<String, dynamic> j) =>
+      DefinitionsEntry(
+        path: j['path'] as String,
+        pipeline: j['pipeline'] as String?,
+        assets: (j['assets'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        action: (j['action'] ?? 'synced') as String,
+        error: j['error'] as String?,
       );
 }
 

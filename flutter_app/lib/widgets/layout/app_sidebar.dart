@@ -16,6 +16,7 @@ class NavItem {
 
 const navItems = [
   NavItem('Dashboard', '/dashboard', Icons.space_dashboard_outlined),
+  NavItem('Assets', '/assets', Icons.hub_outlined),
   NavItem('Pipelines', '/pipelines', Icons.account_tree_outlined),
   NavItem('Connections', '/connections', Icons.cable_outlined),
   NavItem('Job Runs', '/jobs', Icons.bolt_outlined),

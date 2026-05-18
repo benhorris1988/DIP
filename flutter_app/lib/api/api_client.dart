@@ -238,6 +238,54 @@ class ApiClient {
     return data.isEmpty ? null : data.toString();
   }
 
+  // Assets
+  Future<List<AssetWithStatus>> assets() async {
+    final r = await _dio.get('/assets');
+    return (r.data as List)
+        .map((e) => AssetWithStatus.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<AssetGraph> assetGraph() async {
+    final r = await _dio.get('/assets/graph');
+    return AssetGraph.fromJson(r.data as Map<String, dynamic>);
+  }
+
+  Future<AssetWithStatus> asset(String key) async {
+    final r = await _dio.get('/assets/$key');
+    return AssetWithStatus.fromJson(r.data as Map<String, dynamic>);
+  }
+
+  Future<List<AssetMaterializationRecord>> assetMaterializations(String key) async {
+    final r = await _dio.get('/assets/$key/materializations');
+    return (r.data as List)
+        .map((e) =>
+            AssetMaterializationRecord.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> materializeAssets(
+    List<String> keys, {
+    bool includeUpstream = true,
+  }) async {
+    final r = await _dio.post(
+      '/assets/materialize',
+      data: {'keys': keys, 'include_upstream': includeUpstream},
+    );
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  // Definitions
+  Future<DefinitionsReport> reloadDefinitions() async {
+    final r = await _dio.post('/definitions/reload');
+    return DefinitionsReport.fromJson(r.data as Map<String, dynamic>);
+  }
+
+  Future<Map<String, dynamic>> definitionsStatus() async {
+    final r = await _dio.get('/definitions/status');
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
   Future<Stats> stats() async {
     final r = await _dio.get('/jobs/stats');
     return Stats.fromJson(r.data as Map<String, dynamic>);

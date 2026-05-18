@@ -75,6 +75,24 @@ final statsProvider = FutureProvider<Stats>((ref) async {
   return ref.read(apiClientProvider).stats();
 });
 
+final assetsProvider = FutureProvider<List<AssetWithStatus>>((ref) async {
+  return ref.read(apiClientProvider).assets();
+});
+
+final assetGraphProvider = FutureProvider<AssetGraph>((ref) async {
+  return ref.read(apiClientProvider).assetGraph();
+});
+
+final assetProvider =
+    FutureProvider.family<AssetWithStatus, String>((ref, key) async {
+  return ref.read(apiClientProvider).asset(key);
+});
+
+final assetMaterializationsProvider = FutureProvider.family<
+    List<AssetMaterializationRecord>, String>((ref, key) async {
+  return ref.read(apiClientProvider).assetMaterializations(key);
+});
+
 final healthProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   return ref.read(apiClientProvider).health();
 });
@@ -85,4 +103,6 @@ void invalidateAll(WidgetRef ref) {
   ref.invalidate(pipelinesProvider);
   ref.invalidate(jobsProvider);
   ref.invalidate(statsProvider);
+  ref.invalidate(assetsProvider);
+  ref.invalidate(assetGraphProvider);
 }

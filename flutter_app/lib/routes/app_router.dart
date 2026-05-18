@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../pages/asset_detail_page.dart';
+import '../pages/assets_page.dart';
 import '../pages/connection_form_page.dart';
 import '../pages/connections_page.dart';
 import '../pages/dashboard_page.dart';
@@ -48,6 +50,13 @@ final appRouter = GoRouter(
           builder: (_, state) => JobDetailPage(id: state.pathParameters['id']!),
         ),
         GoRoute(path: '/errors', builder: (_, __) => const ErrorExplorerPage()),
+        GoRoute(path: '/assets', builder: (_, __) => const AssetsPage()),
+        GoRoute(
+          path: '/assets/:key',
+          builder: (_, state) => AssetDetailPage(
+            assetKey: state.pathParameters['key']!,
+          ),
+        ),
         GoRoute(path: '/settings', builder: (_, __) => const SettingsPage()),
       ],
     ),

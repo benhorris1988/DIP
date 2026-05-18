@@ -106,6 +106,8 @@ String _titleFor(String root) {
       return 'Job Runs';
     case 'errors':
       return 'Error Explorer';
+    case 'assets':
+      return 'Assets';
     case 'settings':
       return 'Settings';
     default:

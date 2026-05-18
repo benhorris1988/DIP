@@ -1,0 +1,43 @@
+# Example: rename to customer_dim.yaml once a `sap_prod` and `fabric_dw`
+# connection have been created via the Connections UI.
+
+pipeline:
+  name: load_dim_customer
+  description: Load customer dimension from SAP into Fabric Warehouse
+  mode: incremental
+  schedule: "0 */4 * * *"
+  enabled: true
+  source:
+    connection: sap_prod
+    object: BusinessPartner
+    incremental_field: LastChangeDateTime
+  destination:
+    connection: fabric_dw
+    object: dim_customer
+  field_mappings:
+    - source: BusinessPartner
+      destination: customer_key
+    - source: BusinessPartnerFullName
+      destination: customer_name
+      transform: trim
+    - source: Country
+      destination: country_code
+      transform: upper
+
+assets:
+  - key: dim_customer
+    description: Customer dimension (current state)
+    metadata:
+      owner: data-platform
+      tier: silver
+
+---
+# A downstream pipeline can be defined in another file and reference this
+# asset under depends_on:
+#
+#   pipeline:
+#     name: build_customer_segments
+#     ...
+#   assets:
+#     - key: customer_segments
+#       depends_on: [dim_customer, fact_orders]
