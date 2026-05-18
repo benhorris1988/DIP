@@ -74,11 +74,29 @@ class PipelineSpec(BaseModel):
         return v
 
 
+class FreshnessSpec(BaseModel):
+    """How stale an asset is allowed to get before the auto-materializer
+    schedules a fresh run. Either field may be set; whichever produces
+    the shorter window wins."""
+
+    max_age_minutes: int | None = Field(default=None, ge=1)
+    max_age_hours: float | None = Field(default=None, gt=0)
+
+    def to_max_age_seconds(self) -> int | None:
+        candidates: list[int] = []
+        if self.max_age_minutes is not None:
+            candidates.append(self.max_age_minutes * 60)
+        if self.max_age_hours is not None:
+            candidates.append(int(self.max_age_hours * 3600))
+        return min(candidates) if candidates else None
+
+
 class AssetSpec(BaseModel):
     key: str
     description: str | None = None
     depends_on: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    freshness: FreshnessSpec | None = None
 
 
 class DefinitionFile(BaseModel):
@@ -324,6 +342,11 @@ async def load_definitions(db: AsyncSession) -> LoadReport:
                 a.object_name = defn.pipeline.destination.object
                 a.depends_on = list(spec.depends_on)
                 a.asset_metadata = dict(spec.metadata)
+                a.freshness_policy = (
+                    spec.freshness.model_dump(exclude_none=True)
+                    if spec.freshness
+                    else {}
+                )
                 a.definition_path = str(path)
                 entry.assets.append(spec.key)
                 report.assets_total += 1

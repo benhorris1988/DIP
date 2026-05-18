@@ -66,6 +66,7 @@ async def _with_status(
                 object_name=a.object_name,
                 depends_on=list(a.depends_on or []),
                 asset_metadata=dict(a.asset_metadata or {}),
+                freshness_policy=dict(a.freshness_policy or {}),
                 definition_path=a.definition_path,
                 created_at=a.created_at,
                 updated_at=a.updated_at,

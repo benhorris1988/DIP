@@ -29,6 +29,8 @@ class Asset(Base):
     depends_on: Mapped[list] = mapped_column(JSON, default=list)
     # Free-form metadata declared in YAML: owner, tier, group, tags, …
     asset_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Freshness policy: ``{"max_age_minutes": 60}`` etc. Empty dict = none.
+    freshness_policy: Mapped[dict] = mapped_column(JSON, default=dict)
     definition_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -8,6 +8,7 @@ from app.api.routes import (
     assets,
     connections,
     connectors,
+    dag_runs,
     definitions,
     jobs,
     pipelines,
@@ -15,6 +16,7 @@ from app.api.routes import (
 from app.config import get_settings
 from app.db.session import async_session, init_db
 from app.services.definitions import load_definitions
+from app.services.scheduler import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -37,7 +39,11 @@ async def lifespan(app: FastAPI):
                 )
         except Exception:  # noqa: BLE001
             logger.exception("Failed to autoload pipeline definitions")
-    yield
+    start_scheduler()
+    try:
+        yield
+    finally:
+        stop_scheduler()
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
@@ -55,6 +61,7 @@ app.include_router(connections.router, prefix="/api")
 app.include_router(pipelines.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(assets.router, prefix="/api")
+app.include_router(dag_runs.router, prefix="/api")
 app.include_router(definitions.router, prefix="/api")
 
 

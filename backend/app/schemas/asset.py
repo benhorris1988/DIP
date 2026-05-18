@@ -13,6 +13,7 @@ class AssetOut(BaseModel):
     object_name: str | None
     depends_on: list[str]
     asset_metadata: dict[str, Any]
+    freshness_policy: dict[str, Any]
     definition_path: str | None
     created_at: datetime
     updated_at: datetime

@@ -30,6 +30,8 @@ assets:
     metadata:
       owner: data-platform
       tier: silver
+    freshness:
+      max_age_minutes: 240   # auto-re-materialise if older than 4 hours
 
 ---
 # A downstream pipeline can be defined in another file and reference this

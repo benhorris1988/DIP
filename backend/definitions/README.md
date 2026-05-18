@@ -34,7 +34,21 @@ assets:                            # 0..N assets produced by this pipeline
     metadata:                      # optional free-form
       owner: data-platform
       tier: silver
+    freshness:                     # optional; enables auto-materialise
+      max_age_minutes: 60          # re-run if older than 1h
+      # max_age_hours: 4           # whichever is shorter wins
 ```
+
+## Auto-materialisation
+
+If an asset declares a `freshness` block, the backend scheduler
+(`freshness_tick`, see `app/services/scheduler.py`) inspects it every
+minute. When the most recent successful materialisation is older than
+the policy allows (or the asset has never been materialised), a DAG run
+tagged `triggered_by: auto` is launched. Stale assets discovered in the
+same tick are bundled into a single DAG run so shared upstream
+pipelines don't run twice. Runs already in flight for an asset are
+skipped to avoid storms.
 
 ## Rules
 

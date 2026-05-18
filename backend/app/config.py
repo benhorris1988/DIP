@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
     log_level: str = "INFO"
     scheduler_enabled: bool = True
+    # How often the freshness checker scans assets. 60s is a sensible
+    # default for v1; large deployments may want a longer interval.
+    freshness_check_interval_seconds: int = 60
     # Where YAML pipeline definitions live. Relative paths are resolved
     # against the backend's working directory.
     definitions_dir: str = "definitions"

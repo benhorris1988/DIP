@@ -3,6 +3,16 @@
 /// Plain data classes mirroring the FastAPI schemas. Hand-rolled (no codegen)
 /// to keep the bootstrap lightweight.
 
+String _humanDuration(int seconds) {
+  if (seconds < 60) return '${seconds}s';
+  final m = seconds ~/ 60;
+  if (m < 60) return '${m}m';
+  final h = m ~/ 60;
+  if (h < 24) return '${h}h';
+  final d = h ~/ 24;
+  return '${d}d';
+}
+
 class ConnectorMetadata {
   final String type;
   final String label;
@@ -265,11 +275,25 @@ class AssetWithStatus {
   final String? objectName;
   final List<String> dependsOn;
   final Map<String, dynamic> metadata;
+  final Map<String, dynamic> freshnessPolicy;
   final String? definitionPath;
   final String? lastMaterializedAt;
   final String? lastJobId;
   final String? lastStatus;
   final int? rowsWritten;
+
+  bool get hasFreshnessPolicy => freshnessPolicy.isNotEmpty;
+
+  /// Human-readable "auto · 1h" string, or empty when no policy is set.
+  String get freshnessLabel {
+    final m = freshnessPolicy['max_age_minutes'];
+    final h = freshnessPolicy['max_age_hours'];
+    final parts = <String>[];
+    if (m is num) parts.add(_humanDuration(m.toInt() * 60));
+    if (h is num) parts.add(_humanDuration((h * 3600).toInt()));
+    if (parts.isEmpty) return '';
+    return parts.reduce((a, b) => a.length <= b.length ? a : b);
+  }
 
   AssetWithStatus({
     required this.id,
@@ -281,6 +305,7 @@ class AssetWithStatus {
     required this.objectName,
     required this.dependsOn,
     required this.metadata,
+    required this.freshnessPolicy,
     required this.definitionPath,
     required this.lastMaterializedAt,
     required this.lastJobId,
@@ -300,6 +325,8 @@ class AssetWithStatus {
             (j['depends_on'] as List? ?? const []).map((e) => e.toString()).toList(),
         metadata:
             Map<String, dynamic>.from(j['asset_metadata'] as Map? ?? const {}),
+        freshnessPolicy: Map<String, dynamic>.from(
+            j['freshness_policy'] as Map? ?? const {}),
         definitionPath: j['definition_path'] as String?,
         lastMaterializedAt: j['last_materialized_at'] as String?,
         lastJobId: j['last_job_id'] as String?,

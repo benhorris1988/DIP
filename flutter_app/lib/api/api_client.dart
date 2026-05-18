@@ -158,16 +158,27 @@ class ApiClient {
   }
 
   Stream<Job> streamJob(String id) =>
-      _sseJobs(path: '/jobs/$id/stream');
+      _sseJson(path: '/jobs/$id/stream').map(Job.fromJson);
 
-  Stream<Job> streamAllJobs() => _sseJobs(path: '/jobs/stream');
+  Stream<Job> streamAllJobs() =>
+      _sseJson(path: '/jobs/stream').map(Job.fromJson);
 
-  /// Opens an SSE stream, decodes each ``event: job\ndata: {...}\n\n`` frame
-  /// into a [Job], and emits them on a broadcast stream. Heartbeats
-  /// (``:`` comment lines) are ignored. The stream closes when the
-  /// underlying response stream ends or the subscription is cancelled.
-  Stream<Job> _sseJobs({required String path}) {
-    final controller = StreamController<Job>.broadcast();
+  /// Live feed of DAG run state changes (`planned`, `step_started`,
+  /// `step_succeeded`, `step_failed`, `completed`). Payload is the raw
+  /// JSON from the backend so callers can pull `event`, `current_assets`,
+  /// `job_id`, etc. without a typed wrapper.
+  Stream<Map<String, dynamic>> streamAllDagRuns() =>
+      _sseJson(path: '/dag-runs/stream');
+
+  Stream<Map<String, dynamic>> streamDagRun(String id) =>
+      _sseJson(path: '/dag-runs/$id/stream');
+
+  /// Opens an SSE stream, decodes each ``data: {...}`` frame into a
+  /// JSON map, and emits maps on a broadcast stream. Heartbeats (``:``
+  /// comment lines) are ignored. The stream closes when the underlying
+  /// response stream ends or the subscription is cancelled.
+  Stream<Map<String, dynamic>> _sseJson({required String path}) {
+    final controller = StreamController<Map<String, dynamic>>.broadcast();
     final cancelToken = CancelToken();
     StreamSubscription<List<int>>? sub;
 
@@ -199,7 +210,7 @@ class ApiClient {
               if (event == null) continue;
               try {
                 final decoded = json.decode(event) as Map<String, dynamic>;
-                controller.add(Job.fromJson(decoded));
+                controller.add(decoded);
               } catch (e, s) {
                 controller.addError(e, s);
               }
@@ -272,6 +283,19 @@ class ApiClient {
       '/assets/materialize',
       data: {'keys': keys, 'include_upstream': includeUpstream},
     );
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  // DAG runs
+  Future<List<Map<String, dynamic>>> dagRuns({int limit = 50}) async {
+    final r = await _dio.get('/dag-runs', queryParameters: {'limit': limit});
+    return (r.data as List)
+        .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> dagRun(String id) async {
+    final r = await _dio.get('/dag-runs/$id');
     return Map<String, dynamic>.from(r.data as Map);
   }
 

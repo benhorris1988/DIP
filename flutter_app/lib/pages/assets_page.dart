@@ -7,6 +7,7 @@ import '../providers/data_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/colors.dart';
 import '../util/format.dart';
+import '../widgets/dag_runs_live.dart';
 import '../widgets/ui/bifrost_button.dart';
 import '../widgets/ui/empty_state.dart';
 import '../widgets/ui/status_pill.dart';
@@ -68,6 +69,7 @@ class AssetsPage extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 16),
+          const DagRunsLive(),
           Expanded(
             child: graphAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -198,6 +200,41 @@ class _AssetCard extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (a.hasFreshnessPolicy) ...[
+                    Tooltip(
+                      message: 'Auto-materialises if older than '
+                          '${a.freshnessLabel}',
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: context.isDark
+                              ? const Color(0xFF1E2530)
+                              : const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(3),
+                          border: Border.all(
+                              color: BifrostColors.purple.withOpacity(0.4)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.schedule,
+                                size: 9, color: BifrostColors.purple),
+                            const SizedBox(width: 3),
+                            Text(
+                              'auto · ${a.freshnessLabel}',
+                              style: const TextStyle(
+                                fontFamily: 'JetBrainsMono',
+                                fontSize: 9,
+                                color: BifrostColors.purple,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   if (isCycle)
                     const Icon(Icons.error_outline,
                         size: 14, color: BifrostColors.rose)
