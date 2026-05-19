@@ -1,0 +1,13 @@
+**/.dart_tool
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/build
+**/.venv
+**/__pycache__
+**/*.db
+**/.DS_Store
+**/.git
+**/.idea
+**/.vscode
+node_modules
