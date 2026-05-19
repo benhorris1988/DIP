@@ -1,0 +1,10 @@
+# Heavy / platform-specific connectors. Install on top of requirements.txt
+# only if you're actually using the matching connector type. Each pulls in
+# C extensions or large transitive deps and may need Visual Studio Build
+# Tools on Windows when no prebuilt wheel exists for your Python version.
+
+# Microsoft SQL Server / Fabric Warehouse destinations
+pyodbc==5.2.0
+
+# Databricks SQL Warehouse destination — pulls pandas + numpy
+databricks-sql-connector==3.7.3
