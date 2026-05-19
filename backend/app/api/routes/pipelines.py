@@ -1,110 +1,117 @@
-import uuid
-
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import SessionLocal, get_db
-from app.models import Connection, Pipeline
+from app.db.surreal import SurrealStore, get_store
+from app.repositories import ConnectionRepository, PipelineRepository
 from app.schemas.pipeline import PipelineCreate, PipelineOut, PipelineUpdate
 from app.services.runner import run_pipeline
 
 router = APIRouter(prefix="/pipelines", tags=["pipelines"])
 
 
+def _repo(store: SurrealStore = Depends(get_store)) -> PipelineRepository:
+    return PipelineRepository(store)
+
+
 @router.get("", response_model=list[PipelineOut])
-async def list_pipelines(db: AsyncSession = Depends(get_db)) -> list[Pipeline]:
-    return list(
-        (await db.execute(select(Pipeline).order_by(Pipeline.created_at.desc()))).scalars().all()
-    )
+async def list_pipelines(
+    repo: PipelineRepository = Depends(_repo),
+) -> list[PipelineOut]:
+    items = await repo.list()
+    return [PipelineOut.model_validate(i, from_attributes=True) for i in items]
 
 
 @router.post("", response_model=PipelineOut, status_code=201)
 async def create_pipeline(
-    payload: PipelineCreate, db: AsyncSession = Depends(get_db)
-) -> Pipeline:
+    payload: PipelineCreate,
+    store: SurrealStore = Depends(get_store),
+) -> PipelineOut:
+    pipelines = PipelineRepository(store)
+    connections = ConnectionRepository(store)
+
     for cid, label in (
         (payload.source_connection_id, "source"),
         (payload.destination_connection_id, "destination"),
     ):
-        c = (await db.execute(select(Connection).where(Connection.id == cid))).scalar_one_or_none()
+        c = await connections.get(cid)
         if not c:
             raise HTTPException(400, f"{label} connection {cid} not found")
         if c.role != label:
             raise HTTPException(400, f"Connection {c.name} is not a {label}")
 
-    pipeline = Pipeline(
-        id=str(uuid.uuid4()),
-        name=payload.name,
-        description=payload.description,
-        source_connection_id=payload.source_connection_id,
-        destination_connection_id=payload.destination_connection_id,
-        source_object=payload.source_object,
-        destination_object=payload.destination_object,
-        mode=payload.mode,
-        field_mappings=[fm.model_dump() for fm in payload.field_mappings],
-        transform=payload.transform,
-        schedule=payload.schedule,
-        enabled=payload.enabled,
+    if await pipelines.get_by_name(payload.name):
+        raise HTTPException(409, f"A pipeline named {payload.name!r} already exists")
+
+    pipeline = await pipelines.create(
+        data={
+            "name": payload.name,
+            "description": payload.description,
+            "source_connection_id": payload.source_connection_id,
+            "destination_connection_id": payload.destination_connection_id,
+            "source_object": payload.source_object,
+            "destination_object": payload.destination_object,
+            "mode": payload.mode,
+            "field_mappings": [fm.model_dump() for fm in payload.field_mappings],
+            "transform": payload.transform,
+            "schedule": payload.schedule,
+            "enabled": payload.enabled,
+            "incremental_field": payload.incremental_field,
+            "key_columns": payload.key_columns,
+        }
     )
-    db.add(pipeline)
-    await db.commit()
-    await db.refresh(pipeline)
-    return pipeline
+    return PipelineOut.model_validate(pipeline, from_attributes=True)
 
 
 @router.get("/{pipeline_id}", response_model=PipelineOut)
-async def get_pipeline(pipeline_id: str, db: AsyncSession = Depends(get_db)) -> Pipeline:
-    obj = (
-        await db.execute(select(Pipeline).where(Pipeline.id == pipeline_id))
-    ).scalar_one_or_none()
+async def get_pipeline(
+    pipeline_id: str, repo: PipelineRepository = Depends(_repo)
+) -> PipelineOut:
+    obj = await repo.get(pipeline_id)
     if not obj:
         raise HTTPException(404, "Pipeline not found")
-    return obj
+    return PipelineOut.model_validate(obj, from_attributes=True)
 
 
 @router.patch("/{pipeline_id}", response_model=PipelineOut)
 async def update_pipeline(
-    pipeline_id: str, payload: PipelineUpdate, db: AsyncSession = Depends(get_db)
-) -> Pipeline:
-    obj = (
-        await db.execute(select(Pipeline).where(Pipeline.id == pipeline_id))
-    ).scalar_one_or_none()
-    if not obj:
+    pipeline_id: str,
+    payload: PipelineUpdate,
+    repo: PipelineRepository = Depends(_repo),
+) -> PipelineOut:
+    if not await repo.get(pipeline_id):
         raise HTTPException(404, "Pipeline not found")
     data = payload.model_dump(exclude_unset=True)
     if "field_mappings" in data and data["field_mappings"] is not None:
-        data["field_mappings"] = [fm for fm in data["field_mappings"]]
-    for k, v in data.items():
-        setattr(obj, k, v)
-    await db.commit()
-    await db.refresh(obj)
-    return obj
+        data["field_mappings"] = [
+            fm if isinstance(fm, dict) else fm.model_dump()
+            for fm in data["field_mappings"]
+        ]
+    obj = await repo.update(pipeline_id, data)
+    if obj is None:
+        raise HTTPException(404, "Pipeline not found")
+    return PipelineOut.model_validate(obj, from_attributes=True)
 
 
 @router.delete("/{pipeline_id}", status_code=204)
-async def delete_pipeline(pipeline_id: str, db: AsyncSession = Depends(get_db)) -> None:
-    obj = (
-        await db.execute(select(Pipeline).where(Pipeline.id == pipeline_id))
-    ).scalar_one_or_none()
-    if not obj:
+async def delete_pipeline(
+    pipeline_id: str, repo: PipelineRepository = Depends(_repo)
+) -> None:
+    if not await repo.delete(pipeline_id):
         raise HTTPException(404, "Pipeline not found")
-    await db.delete(obj)
-    await db.commit()
 
 
 async def _run_in_background(pipeline_id: str) -> None:
-    async with SessionLocal() as session:
-        await run_pipeline(session, pipeline_id, triggered_by="manual")
+    from app.db.surreal import store as get_store_fn
+
+    await run_pipeline(get_store_fn(), pipeline_id, triggered_by="manual")
 
 
 @router.post("/{pipeline_id}/run", status_code=202)
 async def trigger_run(
-    pipeline_id: str, background: BackgroundTasks, db: AsyncSession = Depends(get_db)
+    pipeline_id: str,
+    background: BackgroundTasks,
+    repo: PipelineRepository = Depends(_repo),
 ) -> dict:
-    obj = (
-        await db.execute(select(Pipeline).where(Pipeline.id == pipeline_id))
-    ).scalar_one_or_none()
+    obj = await repo.get(pipeline_id)
     if not obj:
         raise HTTPException(404, "Pipeline not found")
     background.add_task(_run_in_background, pipeline_id)

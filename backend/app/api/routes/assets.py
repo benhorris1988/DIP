@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
-from app.models import Asset, AssetMaterialization, DagRun, Job, Pipeline
+from app.db.surreal import SurrealStore, get_store
+from app.models import Asset
+from app.repositories import (
+    AssetMaterializationRepository,
+    AssetRepository,
+    JobRepository,
+    PipelineRepository,
+)
 from app.schemas.asset import (
     AssetGraph,
     AssetMaterializationOut,
@@ -20,37 +24,25 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 
 
 async def _with_status(
-    db: AsyncSession, assets: list[Asset]
+    store: SurrealStore, assets: list[Asset]
 ) -> list[AssetWithStatus]:
     if not assets:
         return []
-    keys = [a.key for a in assets]
-    pipeline_ids = list({a.pipeline_id for a in assets})
+    pipelines_repo = PipelineRepository(store)
+    mats_repo = AssetMaterializationRepository(store)
+    jobs_repo = JobRepository(store)
 
-    pipelines = (
-        await db.execute(select(Pipeline).where(Pipeline.id.in_(pipeline_ids)))
-    ).scalars().all()
-    pname = {p.id: p.name for p in pipelines}
+    all_pipelines = await pipelines_repo.list()
+    pname = {p.id: p.name for p in all_pipelines}
 
-    # Most recent materialization per asset
-    last_mats: dict[str, AssetMaterialization] = {}
-    rows = (
-        await db.execute(
-            select(AssetMaterialization)
-            .where(AssetMaterialization.asset_key.in_(keys))
-            .order_by(desc(AssetMaterialization.ts))
-        )
-    ).scalars().all()
-    for row in rows:
-        if row.asset_key not in last_mats:
-            last_mats[row.asset_key] = row
+    last_mats = await mats_repo.latest_per_asset()
 
-    # Status comes from the job referenced by the materialization
-    job_ids = list({m.job_id for m in last_mats.values()})
-    jobs = (
-        await db.execute(select(Job).where(Job.id.in_(job_ids)))
-    ).scalars().all()
-    job_by_id = {j.id: j for j in jobs}
+    job_ids = {m.job_id for m in last_mats.values()}
+    job_by_id = {}
+    for jid in job_ids:
+        j = await jobs_repo.get(jid)
+        if j:
+            job_by_id[j.id] = j
 
     out: list[AssetWithStatus] = []
     for a in assets:
@@ -81,52 +73,48 @@ async def _with_status(
 
 
 @router.get("", response_model=list[AssetWithStatus])
-async def list_assets(db: AsyncSession = Depends(get_db)) -> list[AssetWithStatus]:
-    assets = (await db.execute(select(Asset).order_by(Asset.key))).scalars().all()
-    return await _with_status(db, list(assets))
+async def list_assets(
+    store: SurrealStore = Depends(get_store),
+) -> list[AssetWithStatus]:
+    assets = await AssetRepository(store).list()
+    return await _with_status(store, assets)
 
 
 @router.get("/graph", response_model=AssetGraph)
-async def asset_graph(db: AsyncSession = Depends(get_db)) -> AssetGraph:
-    layers = await graph.layer_assets(db)
-    assets = (await db.execute(select(Asset).order_by(Asset.key))).scalars().all()
-    nodes = await _with_status(db, list(assets))
+async def asset_graph(store: SurrealStore = Depends(get_store)) -> AssetGraph:
+    repo = AssetRepository(store)
+    layers = await graph.layer_assets(repo)
+    assets = await repo.list()
+    nodes = await _with_status(store, assets)
     return AssetGraph(layers=layers, nodes=nodes)
 
 
 @router.get("/{key}", response_model=AssetWithStatus)
-async def get_asset(key: str, db: AsyncSession = Depends(get_db)) -> AssetWithStatus:
-    asset = (
-        await db.execute(select(Asset).where(Asset.key == key))
-    ).scalar_one_or_none()
+async def get_asset(
+    key: str, store: SurrealStore = Depends(get_store)
+) -> AssetWithStatus:
+    asset = await AssetRepository(store).get_by_key(key)
     if not asset:
         raise HTTPException(404, "Asset not found")
-    result = await _with_status(db, [asset])
+    result = await _with_status(store, [asset])
     return result[0]
 
 
 @router.get("/{key}/materializations", response_model=list[AssetMaterializationOut])
 async def list_materializations(
-    key: str, limit: int = 50, db: AsyncSession = Depends(get_db)
-) -> list[AssetMaterialization]:
-    rows = (
-        await db.execute(
-            select(AssetMaterialization)
-            .where(AssetMaterialization.asset_key == key)
-            .order_by(desc(AssetMaterialization.ts))
-            .limit(limit)
-        )
-    ).scalars().all()
-    return list(rows)
+    key: str, limit: int = 50, store: SurrealStore = Depends(get_store)
+) -> list[AssetMaterializationOut]:
+    rows = await AssetMaterializationRepository(store).list_for_asset(key, limit=limit)
+    return [AssetMaterializationOut.model_validate(r, from_attributes=True) for r in rows]
 
 
 @router.post("/materialize", response_model=DagRunOut)
 async def materialize(
-    body: MaterializeRequest, db: AsyncSession = Depends(get_db)
-) -> DagRun:
+    body: MaterializeRequest, store: SurrealStore = Depends(get_store)
+) -> DagRunOut:
     if not body.keys:
         raise HTTPException(422, "keys is required")
     run = await materialize_assets(
-        db, body.keys, include_upstream=body.include_upstream
+        store, body.keys, include_upstream=body.include_upstream
     )
-    return run
+    return DagRunOut.model_validate(run, from_attributes=True)

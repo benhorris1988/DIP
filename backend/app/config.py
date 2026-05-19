@@ -8,10 +8,20 @@ class Settings(BaseSettings):
 
     app_name: str = "Data Integration Platform"
     environment: str = "development"
-    database_url: str = "sqlite+aiosqlite:///./dip.db"
     secret_key: str = "change-me-in-production"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
     log_level: str = "INFO"
+
+    # SurrealDB is the platform's metadata store. Defaults match the
+    # ``surrealdb`` service in docker-compose; override per-environment via
+    # DIP_SURREALDB_URL / DIP_SURREALDB_USER / DIP_SURREALDB_PASSWORD /
+    # DIP_SURREALDB_NAMESPACE / DIP_SURREALDB_DATABASE.
+    surrealdb_url: str = "ws://surrealdb:8000/rpc"
+    surrealdb_user: str = "root"
+    surrealdb_password: str = "root"
+    surrealdb_namespace: str = "dip"
+    surrealdb_database: str = "dip"
+
     scheduler_enabled: bool = True
     # How often the freshness checker scans assets. 60s is a sensible
     # default for v1; large deployments may want a longer interval.

@@ -20,17 +20,19 @@ monitor every job run from a single console.
                                                                   └──────────────────┘
 ```
 
-* **Backend** — Python FastAPI with an async SQLAlchemy metadata store, a
+* **Backend** — Python FastAPI with a **SurrealDB metadata store** (the
+  platform's own state — connections, pipelines, jobs, assets, DAG runs —
+  lives in SurrealDB; tables are defined idempotently at startup), a
   connector plugin registry, and a pipeline runner that streams batches from a
   source connector to a destination connector.
 * **Client** — Flutter app (web + iOS + Android) styled as the Bifrost
   operator console: Dashboard, Pipelines, Pipeline Detail, Connections, Job
   Runs, Error Explorer, Settings. See [`flutter_app/README.md`](flutter_app/README.md).
 * **Connectors today**
-  * Sources: `sap_odata`, `oracle`
-  * Destinations: `surrealdb`, `mssql`
-* **Roadmap connectors** — Microsoft Fabric, Databricks, Snowflake, generic
-  REST/Webhook, S3/Blob. Adding one is a single file under
+  * Sources: `sap_odata` (OData v2 for SAP ECC 6.0 / S/4HANA), `oracle`
+  * Destinations: `surrealdb`, `mssql` (insert + MERGE upsert), `fabric_warehouse`, `databricks_sql`
+* **Roadmap connectors** — Snowflake, generic REST/Webhook, S3/Blob.
+  Adding one is a single file under
   `backend/app/connectors/{sources,destinations}/`.
 
 ## Extending with a new connector
@@ -62,7 +64,24 @@ docker compose up --build
 ```
 
 * Backend → http://localhost:8000 (Swagger UI at `/docs`)
-* SurrealDB → ws://localhost:8001/rpc
+* SurrealDB (metadata store) → ws://localhost:8001/rpc (persisted to a
+  named volume; switch to your dedicated SurrealDB cluster in production
+  by setting `DIP_SURREALDB_URL` / `DIP_SURREALDB_USER` /
+  `DIP_SURREALDB_PASSWORD` / `DIP_SURREALDB_NAMESPACE` /
+  `DIP_SURREALDB_DATABASE`).
+
+### Tests
+
+```bash
+cd backend
+pip install -r requirements.txt
+pytest
+```
+
+Repository / API / runner tests need a `surreal` binary on PATH — they
+spin up a transient in-memory instance per test. Pure unit tests
+(MSSQL MERGE SQL builder, SAP OData mock, scheduler cron logic) run
+without it.
 
 ### Flutter operator console
 

@@ -71,6 +71,8 @@ class SurrealDbDestination(DestinationConnector):
         records: list[dict[str, Any]],
         *,
         mode: str = "upsert",
+        key_columns: list[str] | None = None,
+        **_: Any,
     ) -> int:
         if not records:
             return 0

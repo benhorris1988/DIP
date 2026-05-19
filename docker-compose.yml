@@ -4,18 +4,31 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DIP_DATABASE_URL=sqlite+aiosqlite:///./dip.db
+      - DIP_SURREALDB_URL=ws://surrealdb:8000/rpc
+      - DIP_SURREALDB_USER=root
+      - DIP_SURREALDB_PASSWORD=root
+      - DIP_SURREALDB_NAMESPACE=dip
+      - DIP_SURREALDB_DATABASE=dip
       # CORS for `flutter run -d chrome` (5173 is Flutter's default web port too)
       - DIP_CORS_ORIGINS=["http://localhost:5173","http://localhost:3000","http://localhost:8080"]
+    depends_on:
+      - surrealdb
     volumes:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # The platform's metadata DB. For production, replace with your
+  # dedicated SurrealDB cluster and set DIP_SURREALDB_* on the backend.
   surrealdb:
     image: surrealdb/surrealdb:latest
-    command: start --user root --pass root memory
+    command: start --user root --pass root rocksdb:///data/dip.db
+    volumes:
+      - surreal_data:/data
     ports:
       - "8001:8000"
+
+volumes:
+  surreal_data:
 
 # The Flutter operator console runs locally — see flutter_app/README.md for
 # `flutter run -d chrome`, iOS, and Android instructions. Production web

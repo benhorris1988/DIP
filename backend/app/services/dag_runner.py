@@ -9,21 +9,23 @@ If any layer fails, downstream layers are skipped — the DagRun ends in
 ``failed``. Independent assets in the same layer are run sequentially
 in v1; parallelism is a future improvement and only safe once we know
 two pipelines don't share a destination (or a connection rate-limit).
-
-Progress is published to the SSE bus under ``kind="dag_run"`` so the UI
-can stream layer transitions live without polling.
 """
 
 from __future__ import annotations
 
 import logging
-import uuid
-from datetime import datetime
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models import AssetMaterialization, DagRun, Job, JobStatus
+from app.db.surreal import SurrealStore
+from app.models import DagRun, Job, JobStatus
+from app.repositories import (
+    AssetMaterializationRepository,
+    AssetRepository,
+    DagRunRepository,
+    JobRepository,
+    PipelineRepository,
+)
+from app.repositories._common import now
 from app.services import graph
 from app.services.events import bus
 from app.services.runner import run_pipeline
@@ -70,7 +72,7 @@ def _snapshot(
 
 
 async def materialize_assets(
-    db: AsyncSession,
+    store: SurrealStore,
     asset_keys: list[str],
     *,
     triggered_by: str = "manual",
@@ -78,24 +80,24 @@ async def materialize_assets(
 ) -> DagRun:
     """Materialize ``asset_keys`` and (optionally) everything they depend
     on. Returns the completed :class:`DagRun`."""
+    assets_repo = AssetRepository(store)
+    pipelines_repo = PipelineRepository(store)
+    jobs_repo = JobRepository(store)
+    runs_repo = DagRunRepository(store)
+    mats_repo = AssetMaterializationRepository(store)
+
     resolved = (
-        await graph.upstream_closure(db, asset_keys)
+        await graph.upstream_closure(assets_repo, asset_keys)
         if include_upstream
         else list(asset_keys)
     )
-    plan = await graph.pipelines_for_assets(db, resolved)
+    plan = await graph.pipelines_for_assets(assets_repo, resolved)
 
-    run = DagRun(
-        id=str(uuid.uuid4()),
+    run = await runs_repo.create(
         triggered_by=triggered_by,
         requested_assets=list(asset_keys),
         resolved_assets=list(resolved),
-        status=JobStatus.RUNNING.value,
-        started_at=datetime.utcnow(),
     )
-    db.add(run)
-    await db.commit()
-    await db.refresh(run)
 
     await bus.publish(_snapshot(run, event="planned", plan=plan), kind="dag_run")
 
@@ -104,16 +106,10 @@ async def materialize_assets(
     for pipeline_id, assets_for_pipeline in plan:
         if failed:
             break
-        # Look up the pipeline name so SSE consumers don't need a second round-trip.
         pname = None
-        from app.models import Pipeline  # local import to avoid circular at module load
-        from sqlalchemy import select
-
-        pname_row = (
-            await db.execute(select(Pipeline.name).where(Pipeline.id == pipeline_id))
-        ).first()
-        if pname_row:
-            pname = pname_row[0]
+        p = await pipelines_repo.get(pipeline_id)
+        if p:
+            pname = p.name
 
         await bus.publish(
             _snapshot(
@@ -127,10 +123,10 @@ async def materialize_assets(
         )
         try:
             job: Job = await run_pipeline(
-                db, pipeline_id, triggered_by=f"dag:{triggered_by}"
+                store, pipeline_id, triggered_by=f"dag:{triggered_by}"
             )
+            await jobs_repo.update(job.id, {"dag_run_id": run.id})
             job.dag_run_id = run.id
-            await db.commit()
             if job.status != JobStatus.SUCCEEDED.value:
                 failed = True
                 last_error = job.error or "pipeline did not succeed"
@@ -148,17 +144,13 @@ async def materialize_assets(
                 )
                 continue
             for key in assets_for_pipeline:
-                db.add(
-                    AssetMaterialization(
-                        id=str(uuid.uuid4()),
-                        asset_key=key,
-                        job_id=job.id,
-                        pipeline_id=pipeline_id,
-                        dag_run_id=run.id,
-                        rows_written=job.rows_written,
-                    )
+                await mats_repo.record(
+                    asset_key=key,
+                    job_id=job.id,
+                    pipeline_id=pipeline_id,
+                    rows_written=job.rows_written,
+                    dag_run_id=run.id,
                 )
-            await db.commit()
             await bus.publish(
                 _snapshot(
                     run,
@@ -186,10 +178,12 @@ async def materialize_assets(
                 kind="dag_run",
             )
 
-    run.status = JobStatus.FAILED.value if failed else JobStatus.SUCCEEDED.value
-    run.finished_at = datetime.utcnow()
-    await db.commit()
-    await db.refresh(run)
+    final_status = JobStatus.FAILED.value if failed else JobStatus.SUCCEEDED.value
+    updated = await runs_repo.update(
+        run.id, {"status": final_status, "finished_at": now()}
+    )
+    if updated is not None:
+        run = updated
     await bus.publish(
         _snapshot(run, event="completed", error=last_error),
         kind="dag_run",

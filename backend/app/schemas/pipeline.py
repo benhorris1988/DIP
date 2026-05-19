@@ -23,6 +23,9 @@ class PipelineBase(BaseModel):
     schedule: str | None = None
     enabled: bool = True
     incremental_field: str | None = None
+    # Columns that identify a row at the destination, used by MERGE-capable
+    # destinations when ``mode`` is ``upsert``. Ignored otherwise.
+    key_columns: list[str] = Field(default_factory=list)
 
 
 class PipelineCreate(PipelineBase):
@@ -40,6 +43,7 @@ class PipelineUpdate(BaseModel):
     schedule: str | None = None
     enabled: bool | None = None
     incremental_field: str | None = None
+    key_columns: list[str] | None = None
 
 
 class PipelineOut(PipelineBase):

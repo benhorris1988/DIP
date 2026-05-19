@@ -6,11 +6,13 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
-from app.models import AssetMaterialization, DagRun, Job
+from app.db.surreal import SurrealStore, get_store
+from app.repositories import (
+    AssetMaterializationRepository,
+    DagRunRepository,
+    JobRepository,
+)
 from app.services.events import bus
 
 router = APIRouter(prefix="/dag-runs", tags=["dag-runs"])
@@ -36,7 +38,6 @@ async def _sse_iter(request: Request, run_id: str | None) -> AsyncIterator[bytes
 
 @router.get("/stream")
 async def stream_all(request: Request) -> StreamingResponse:
-    """SSE: every DAG run state change, for the Dashboard / Assets page."""
     return StreamingResponse(
         _sse_iter(request, None),
         media_type="text/event-stream",
@@ -46,7 +47,6 @@ async def stream_all(request: Request) -> StreamingResponse:
 
 @router.get("/{run_id}/stream")
 async def stream_one(run_id: str, request: Request) -> StreamingResponse:
-    """SSE: events for a single DAG run, for the DAG Run Detail page."""
     return StreamingResponse(
         _sse_iter(request, run_id),
         media_type="text/event-stream",
@@ -55,12 +55,10 @@ async def stream_one(run_id: str, request: Request) -> StreamingResponse:
 
 
 @router.get("")
-async def list_runs(limit: int = 50, db: AsyncSession = Depends(get_db)) -> list[dict]:
-    rows = (
-        await db.execute(
-            select(DagRun).order_by(desc(DagRun.started_at)).limit(limit)
-        )
-    ).scalars().all()
+async def list_runs(
+    limit: int = 50, store: SurrealStore = Depends(get_store)
+) -> list[dict]:
+    rows = await DagRunRepository(store).list(limit=limit)
     return [
         {
             "id": r.id,
@@ -76,24 +74,12 @@ async def list_runs(limit: int = 50, db: AsyncSession = Depends(get_db)) -> list
 
 
 @router.get("/{run_id}")
-async def get_run(run_id: str, db: AsyncSession = Depends(get_db)) -> dict:
-    run = (
-        await db.execute(select(DagRun).where(DagRun.id == run_id))
-    ).scalar_one_or_none()
+async def get_run(run_id: str, store: SurrealStore = Depends(get_store)) -> dict:
+    run = await DagRunRepository(store).get(run_id)
     if not run:
         raise HTTPException(404, "DAG run not found")
-    jobs = (
-        await db.execute(
-            select(Job).where(Job.dag_run_id == run.id).order_by(Job.created_at)
-        )
-    ).scalars().all()
-    mats = (
-        await db.execute(
-            select(AssetMaterialization).where(
-                AssetMaterialization.dag_run_id == run.id
-            )
-        )
-    ).scalars().all()
+    jobs = await JobRepository(store).list_for_dag_run(run_id)
+    mats = await AssetMaterializationRepository(store).list_for_dag_run(run_id)
     return {
         "id": run.id,
         "triggered_by": run.triggered_by,

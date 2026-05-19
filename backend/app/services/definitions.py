@@ -5,31 +5,32 @@ pipelines marked ``definition_source='yaml'``. The loader:
 
 1. Reads every ``*.yaml`` / ``*.yml`` file in the directory.
 2. Validates the structure with pydantic.
-3. Resolves connection names → IDs against the current DB.
+3. Resolves connection names → IDs against the current metadata store.
 4. Validates the asset DAG (no cycles, all upstream keys exist).
-5. Upserts pipelines and assets, transactionally.
+5. Upserts pipelines and assets via the repositories.
 6. Tombstones YAML pipelines whose file has been removed.
 
 The loader returns a :class:`LoadReport` so the API can surface the
-result in the UI. The DB is the materialised view; the YAML files are
-truth.
+result in the UI.
 """
 
 from __future__ import annotations
 
 import logging
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.models import Asset, Connection, Pipeline
+from app.db.surreal import SurrealStore
+from app.repositories import (
+    AssetRepository,
+    ConnectionRepository,
+    PipelineRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ class PipelineSpec(BaseModel):
     mode: str = Field(default="full")
     schedule: str | None = None
     enabled: bool = True
+    key_columns: list[str] = Field(default_factory=list)
     source: SourceSpec
     destination: DestinationSpec
     field_mappings: list[FieldMappingSpec] = Field(default_factory=list)
@@ -81,14 +83,6 @@ class FreshnessSpec(BaseModel):
 
     max_age_minutes: int | None = Field(default=None, ge=1)
     max_age_hours: float | None = Field(default=None, gt=0)
-
-    def to_max_age_seconds(self) -> int | None:
-        candidates: list[int] = []
-        if self.max_age_minutes is not None:
-            candidates.append(self.max_age_minutes * 60)
-        if self.max_age_hours is not None:
-            candidates.append(int(self.max_age_hours * 3600))
-        return min(candidates) if candidates else None
 
 
 class AssetSpec(BaseModel):
@@ -156,7 +150,9 @@ class DefinitionError(Exception):
     pass
 
 
-def _read_files(root: Path) -> list[tuple[Path, DefinitionFile]]:
+def _read_files(root: Path) -> tuple[
+    list[tuple[Path, DefinitionFile]], list[tuple[Path, str]]
+]:
     parsed: list[tuple[Path, DefinitionFile]] = []
     errors: list[tuple[Path, str]] = []
     for p in sorted(root.rglob("*.y*ml")):
@@ -170,20 +166,14 @@ def _read_files(root: Path) -> list[tuple[Path, DefinitionFile]]:
             parsed.append((p, DefinitionFile.model_validate(raw)))
         except (yaml.YAMLError, ValidationError) as exc:
             errors.append((p, str(exc)))
-    if errors:
-        # Stash errors on the function via attribute trick — they're returned
-        # alongside the parsed files in load_definitions, see below.
-        _read_files.errors = errors  # type: ignore[attr-defined]
-    else:
-        _read_files.errors = []  # type: ignore[attr-defined]
-    return parsed
+    return parsed, errors
 
 
 def _detect_cycles(asset_keys: dict[str, list[str]]) -> list[str]:
     """Returns the keys in any cycle, or [] if the DAG is acyclic.
 
-    Uses Kahn's algorithm: drain nodes with in-degree 0 from the graph
-    and any survivors are part of (or downstream of) a cycle.
+    Kahn's algorithm: drain nodes with in-degree 0 and any survivors are
+    part of (or downstream of) a cycle.
     """
     in_degree = {k: 0 for k in asset_keys}
     for k, deps in asset_keys.items():
@@ -203,7 +193,18 @@ def _detect_cycles(asset_keys: dict[str, list[str]]) -> list[str]:
     return [k for k in asset_keys if k not in visited]
 
 
-async def load_definitions(db: AsyncSession) -> LoadReport:
+def _freshness_to_dict(spec: FreshnessSpec | None) -> dict[str, Any]:
+    if spec is None:
+        return {}
+    out: dict[str, Any] = {}
+    if spec.max_age_minutes is not None:
+        out["max_age_minutes"] = spec.max_age_minutes
+    if spec.max_age_hours is not None:
+        out["max_age_hours"] = spec.max_age_hours
+    return out
+
+
+async def load_definitions(store: SurrealStore) -> LoadReport:
     settings = get_settings()
     root = Path(settings.definitions_dir).resolve()
     report = LoadReport(directory=str(root))
@@ -211,19 +212,18 @@ async def load_definitions(db: AsyncSession) -> LoadReport:
     if not root.exists():
         return report
 
-    parsed = _read_files(root)
-    parse_errors: list[tuple[Path, str]] = getattr(_read_files, "errors", [])
+    connections_repo = ConnectionRepository(store)
+    pipelines_repo = PipelineRepository(store)
+    assets_repo = AssetRepository(store)
+
+    parsed, parse_errors = _read_files(root)
     for path, err in parse_errors:
-        report.entries.append(
-            LoadEntry(path=str(path), action="error", error=err)
-        )
+        report.entries.append(LoadEntry(path=str(path), action="error", error=err))
         report.errors += 1
 
-    # Index connections by name for resolution
-    conns = (await db.execute(select(Connection))).scalars().all()
-    conn_by_name = {c.name: c for c in conns}
+    all_connections = await connections_repo.list()
+    conn_by_name = {c.name: c for c in all_connections}
 
-    # Collect declared assets across all files for DAG validation
     declared_asset_keys: dict[str, list[str]] = {}
     for _, defn in parsed:
         for asset in defn.assets:
@@ -231,8 +231,6 @@ async def load_definitions(db: AsyncSession) -> LoadReport:
 
     cycle_nodes = _detect_cycles(declared_asset_keys)
     if cycle_nodes:
-        # Refuse the whole load on cycles — partial loads would leave the DB
-        # in a confusing state.
         report.entries.append(
             LoadEntry(
                 path=str(root),
@@ -243,33 +241,26 @@ async def load_definitions(db: AsyncSession) -> LoadReport:
         report.errors += 1
         return report
 
-    # Validate that every referenced upstream key is declared somewhere
     for key, deps in declared_asset_keys.items():
         for d in deps:
-            if d not in declared_asset_keys:
-                # Allow assets defined manually in the DB to be referenced too
-                existing = (
-                    await db.execute(select(Asset).where(Asset.key == d))
-                ).scalar_one_or_none()
-                if not existing:
-                    report.entries.append(
-                        LoadEntry(
-                            path="(graph)",
-                            action="error",
-                            error=f"asset {key!r} depends_on unknown key {d!r}",
-                        )
+            if d in declared_asset_keys:
+                continue
+            existing = await assets_repo.get_by_key(d)
+            if existing is None:
+                report.entries.append(
+                    LoadEntry(
+                        path="(graph)",
+                        action="error",
+                        error=f"asset {key!r} depends_on unknown key {d!r}",
                     )
-                    report.errors += 1
+                )
+                report.errors += 1
 
     if report.errors:
         return report
 
     # Snapshot existing YAML-sourced pipelines so we can tombstone removed ones
-    existing_yaml = (
-        (await db.execute(select(Pipeline).where(Pipeline.definition_source == "yaml")))
-        .scalars()
-        .all()
-    )
+    existing_yaml = await pipelines_repo.list_yaml_sourced()
     existing_by_name = {p.name: p for p in existing_yaml}
     seen_names: set[str] = set()
 
@@ -286,73 +277,60 @@ async def load_definitions(db: AsyncSession) -> LoadReport:
                 raise DefinitionError(
                     f"destination connection {defn.pipeline.destination.connection!r} not found"
                 )
-            existing = existing_by_name.get(defn.pipeline.name)
-            if existing is None:
-                # Also check for a UI-created pipeline with the same name —
-                # YAML wins, but we refuse the load to avoid silently
-                # clobbering UI work.
-                conflict = (
-                    await db.execute(
-                        select(Pipeline).where(Pipeline.name == defn.pipeline.name)
-                    )
-                ).scalar_one_or_none()
-                if conflict and conflict.definition_source != "yaml":
-                    raise DefinitionError(
-                        f"name conflict: a UI pipeline named "
-                        f"{defn.pipeline.name!r} already exists"
-                    )
-                existing = Pipeline(id=str(uuid.uuid4()), name=defn.pipeline.name)
-                db.add(existing)
+            # YAML wins over UI for the same name, but only against another
+            # YAML pipeline — refuse to clobber a UI-created pipeline silently.
+            conflict = await pipelines_repo.get_by_name(defn.pipeline.name)
+            if conflict and conflict.definition_source != "yaml":
+                raise DefinitionError(
+                    f"name conflict: a UI pipeline named "
+                    f"{defn.pipeline.name!r} already exists"
+                )
 
-            existing.description = defn.pipeline.description
-            existing.source_connection_id = src_conn.id
-            existing.destination_connection_id = dst_conn.id
-            existing.source_object = defn.pipeline.source.object
-            existing.destination_object = defn.pipeline.destination.object
-            existing.mode = defn.pipeline.mode
-            existing.schedule = defn.pipeline.schedule
-            existing.enabled = defn.pipeline.enabled
-            existing.incremental_field = defn.pipeline.source.incremental_field
-            existing.field_mappings = [m.model_dump(exclude_none=True) for m in defn.pipeline.field_mappings]
-            existing.definition_source = "yaml"
-            existing.definition_path = str(path)
+            pipeline = await pipelines_repo.upsert_by_name(
+                name=defn.pipeline.name,
+                data={
+                    "description": defn.pipeline.description,
+                    "source_connection_id": src_conn.id,
+                    "destination_connection_id": dst_conn.id,
+                    "source_object": defn.pipeline.source.object,
+                    "destination_object": defn.pipeline.destination.object,
+                    "mode": defn.pipeline.mode,
+                    "schedule": defn.pipeline.schedule,
+                    "enabled": defn.pipeline.enabled,
+                    "key_columns": list(defn.pipeline.key_columns),
+                    "incremental_field": defn.pipeline.source.incremental_field,
+                    "field_mappings": [
+                        m.model_dump(exclude_none=True)
+                        for m in defn.pipeline.field_mappings
+                    ],
+                    "definition_source": "yaml",
+                    "definition_path": str(path),
+                },
+            )
             seen_names.add(defn.pipeline.name)
 
-            # Flush so the pipeline.id is available for asset FK
-            await db.flush()
-
-            # Sync assets: upsert by key, tombstone old assets that no longer
-            # appear on this pipeline.
-            existing_assets = (
-                (await db.execute(select(Asset).where(Asset.pipeline_id == existing.id)))
-                .scalars()
-                .all()
-            )
+            # Sync assets: upsert by key, then prune those no longer declared.
+            existing_assets = await assets_repo.list_for_pipeline(pipeline.id)
             existing_by_key = {a.key: a for a in existing_assets}
             current_keys: set[str] = set()
             for spec in defn.assets:
                 current_keys.add(spec.key)
-                a = existing_by_key.get(spec.key)
-                if a is None:
-                    a = Asset(id=str(uuid.uuid4()), key=spec.key)
-                    db.add(a)
-                a.description = spec.description
-                a.pipeline_id = existing.id
-                a.connection_id = dst_conn.id
-                a.object_name = defn.pipeline.destination.object
-                a.depends_on = list(spec.depends_on)
-                a.asset_metadata = dict(spec.metadata)
-                a.freshness_policy = (
-                    spec.freshness.model_dump(exclude_none=True)
-                    if spec.freshness
-                    else {}
+                await assets_repo.upsert(
+                    key=spec.key,
+                    pipeline_id=pipeline.id,
+                    description=spec.description,
+                    connection_id=dst_conn.id,
+                    object_name=defn.pipeline.destination.object,
+                    depends_on=list(spec.depends_on),
+                    asset_metadata=dict(spec.metadata),
+                    freshness_policy=_freshness_to_dict(spec.freshness),
+                    definition_path=str(path),
                 )
-                a.definition_path = str(path)
                 entry.assets.append(spec.key)
                 report.assets_total += 1
             for old_key, old_asset in existing_by_key.items():
                 if old_key not in current_keys:
-                    await db.delete(old_asset)
+                    await assets_repo.delete(old_asset.id)
 
             report.pipelines_total += 1
         except (DefinitionError, ValueError) as exc:
@@ -364,12 +342,7 @@ async def load_definitions(db: AsyncSession) -> LoadReport:
     # Tombstone YAML-pipelines whose file has gone away
     for name, pipeline in existing_by_name.items():
         if name not in seen_names:
-            await db.delete(pipeline)
+            await pipelines_repo.delete(pipeline.id)
             report.removed_pipelines.append(name)
-
-    if report.errors == 0:
-        await db.commit()
-    else:
-        await db.rollback()
 
     return report

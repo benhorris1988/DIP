@@ -14,7 +14,7 @@ from app.api.routes import (
     pipelines,
 )
 from app.config import get_settings
-from app.db.session import async_session, init_db
+from app.db.surreal import store as get_store
 from app.services.definitions import load_definitions
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -25,11 +25,11 @@ logging.basicConfig(level=settings.log_level)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    store = get_store()
+    await store.connect()
     if settings.autoload_definitions:
         try:
-            async with async_session() as db:
-                report = await load_definitions(db)
+            report = await load_definitions(store)
             if report.pipelines_total or report.errors:
                 logger.info(
                     "Loaded %d pipelines (%d errors) from %s",
@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         stop_scheduler()
+        await store.disconnect()
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)

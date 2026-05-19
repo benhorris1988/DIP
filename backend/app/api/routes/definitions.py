@@ -1,27 +1,24 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from pathlib import Path
 
-from app.db.session import get_db
+from fastapi import APIRouter, Depends
+
+from app.config import get_settings
+from app.db.surreal import SurrealStore, get_store
 from app.services.definitions import load_definitions
 
 router = APIRouter(prefix="/definitions", tags=["definitions"])
 
 
 @router.post("/reload")
-async def reload(db: AsyncSession = Depends(get_db)) -> dict:
-    report = await load_definitions(db)
+async def reload(store: SurrealStore = Depends(get_store)) -> dict:
+    report = await load_definitions(store)
     return report.to_dict()
 
 
 @router.get("/status")
-async def status(db: AsyncSession = Depends(get_db)) -> dict:
-    # Same shape as /reload but without mutating — handy for the UI to show
-    # what *would* be loaded.
-    from app.config import get_settings
-    from pathlib import Path
-
+async def status() -> dict:
     settings = get_settings()
     root = Path(settings.definitions_dir).resolve()
     return {

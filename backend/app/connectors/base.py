@@ -57,9 +57,18 @@ class BaseConnector(ABC):
 class SourceConnector(BaseConnector):
     @abstractmethod
     async def read(
-        self, object_name: str, *, batch_size: int = 1000, since: str | None = None
+        self,
+        object_name: str,
+        *,
+        batch_size: int = 1000,
+        since: str | None = None,
+        **kwargs: Any,
     ) -> AsyncIterator[list[dict[str, Any]]]:
-        """Yields batches of records from the named source object."""
+        """Yields batches of records from the named source object.
+
+        ``kwargs`` lets specific source connectors accept extra options
+        (e.g. ``incremental_field`` for OData) without changing the ABC.
+        """
         if False:
             yield []  # pragma: no cover
 
@@ -72,5 +81,13 @@ class DestinationConnector(BaseConnector):
         records: list[dict[str, Any]],
         *,
         mode: str = "upsert",
+        key_columns: list[str] | None = None,
+        **kwargs: Any,
     ) -> int:
-        """Writes records to the destination object. Returns rows written."""
+        """Writes records to the destination object.
+
+        ``mode`` is one of ``"insert"`` or ``"upsert"``. ``key_columns``
+        is the list of columns that uniquely identify a row at the
+        destination — required for ``upsert`` against MERGE-capable
+        destinations. Returns the count of rows written.
+        """

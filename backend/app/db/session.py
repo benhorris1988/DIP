@@ -1,28 +1,13 @@
-from collections.abc import AsyncGenerator
+"""Compatibility shim — the metadata store is now SurrealDB.
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+Historically this module exposed a SQLAlchemy ``AsyncSession`` factory.
+The platform's metadata store is SurrealDB now, so the only thing left
+here is the FastAPI dependency that yields the process-wide
+:class:`SurrealStore` and the lifespan helpers.
+"""
 
-from app.config import get_settings
+from __future__ import annotations
 
-settings = get_settings()
+from app.db.surreal import SurrealStore, get_store, store
 
-engine = create_async_engine(settings.database_url, echo=False, future=True)
-SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-async_session = SessionLocal
-
-
-class Base(DeclarativeBase):
-    pass
-
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with SessionLocal() as session:
-        yield session
-
-
-async def init_db() -> None:
-    from app.models import asset, connection, job, pipeline  # noqa: F401
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+__all__ = ["SurrealStore", "get_store", "store"]

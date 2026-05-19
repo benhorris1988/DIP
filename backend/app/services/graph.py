@@ -6,10 +6,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models import Asset
+from app.repositories import AssetRepository
 
 
 @dataclass
@@ -19,22 +16,25 @@ class AssetNode:
     depends_on: list[str]
 
 
-async def _all_assets(db: AsyncSession) -> list[AssetNode]:
-    rows = (await db.execute(select(Asset))).scalars().all()
+async def _all_assets(repo: AssetRepository) -> list[AssetNode]:
+    rows = await repo.list()
     return [
-        AssetNode(key=a.key, pipeline_id=a.pipeline_id, depends_on=list(a.depends_on or []))
+        AssetNode(
+            key=a.key,
+            pipeline_id=a.pipeline_id,
+            depends_on=list(a.depends_on or []),
+        )
         for a in rows
     ]
 
 
-async def layer_assets(db: AsyncSession) -> list[list[str]]:
+async def layer_assets(repo: AssetRepository) -> list[list[str]]:
     """Topologically sort assets into layers (Kahn's algorithm).
 
-    Layer 0 = no dependencies (root assets). Layer N = depends only on
-    assets in layers < N. Cycles cause leftover keys to surface in a
-    trailing layer marked with the prefix ``? ``.
+    Layer 0 = no dependencies. Cycles (which the loader should reject)
+    surface in a trailing layer marked with ``? `` prefix.
     """
-    nodes = await _all_assets(db)
+    nodes = await _all_assets(repo)
     keys = {n.key for n in nodes}
     in_degree: dict[str, int] = {n.key: 0 for n in nodes}
     children: dict[str, list[str]] = defaultdict(list)
@@ -58,17 +58,16 @@ async def layer_assets(db: AsyncSession) -> list[list[str]]:
                     next_layer.append(child)
         current = sorted(next_layer)
 
-    # Any leftover are in cycles (shouldn't happen post-load) but surface them
     leftover = sorted(k for k in keys if k not in done)
     if leftover:
         layers.append([f"? {k}" for k in leftover])
     return layers
 
 
-async def upstream_closure(db: AsyncSession, keys: list[str]) -> list[str]:
+async def upstream_closure(repo: AssetRepository, keys: list[str]) -> list[str]:
     """Returns all assets reachable upstream from ``keys`` (inclusive),
     in topological order (deepest deps first)."""
-    nodes = await _all_assets(db)
+    nodes = await _all_assets(repo)
     by_key = {n.key: n for n in nodes}
     if not by_key:
         return []
@@ -88,8 +87,8 @@ async def upstream_closure(db: AsyncSession, keys: list[str]) -> list[str]:
     return order
 
 
-async def downstream_closure(db: AsyncSession, keys: list[str]) -> list[str]:
-    nodes = await _all_assets(db)
+async def downstream_closure(repo: AssetRepository, keys: list[str]) -> list[str]:
+    nodes = await _all_assets(repo)
     children: dict[str, list[str]] = defaultdict(list)
     for n in nodes:
         for dep in n.depends_on:
@@ -108,15 +107,14 @@ async def downstream_closure(db: AsyncSession, keys: list[str]) -> list[str]:
 
 
 async def pipelines_for_assets(
-    db: AsyncSession, keys: list[str]
+    repo: AssetRepository, keys: list[str]
 ) -> list[tuple[str, list[str]]]:
     """Groups assets by their producing pipeline.
 
     Returns ``[(pipeline_id, [asset_key, ...]), ...]`` preserving the
-    order of ``keys`` (which the caller normally orders by
-    :func:`upstream_closure`).
+    order of ``keys`` (typically pre-ordered by :func:`upstream_closure`).
     """
-    nodes = await _all_assets(db)
+    nodes = await _all_assets(repo)
     by_key = {n.key: n for n in nodes}
     seen: list[str] = []
     grouped: dict[str, list[str]] = defaultdict(list)
