@@ -1,8 +1,11 @@
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from app.api.routes import (
     assets,
@@ -68,3 +71,33 @@ app.include_router(definitions.router, prefix="/api")
 @app.get("/api/health")
 async def health() -> dict:
     return {"status": "ok", "app": settings.app_name, "env": settings.environment}
+
+
+# Serve the built Flutter web app from the same origin when present.
+# Set DIP_WEB_DIR to override; default looks for ../flutter_app/build/web
+# relative to the backend working directory.
+_web_dir = Path(
+    os.environ.get("DIP_WEB_DIR", "../flutter_app/build/web")
+).resolve()
+if _web_dir.exists() and (_web_dir / "index.html").exists():
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa(full_path: str):
+        # Serve any file present in the build, falling back to the SPA shell
+        # so Flutter's client-side router can take over for unknown paths.
+        # The /assets prefix is shared between Flutter's static asset
+        # directory *and* its in-app routes, so we resolve real files first
+        # and only then fall back to index.html.
+        candidate = (_web_dir / full_path).resolve()
+        # Guard against ../ traversal escaping the web root
+        if (
+            full_path
+            and candidate.is_file()
+            and _web_dir in candidate.parents
+        ):
+            return FileResponse(candidate)
+        return FileResponse(_web_dir / "index.html")
+
+    logger.info("Serving Flutter web app from %s", _web_dir)
+else:
+    logger.info("No Flutter web build found at %s (set DIP_WEB_DIR to override)", _web_dir)
