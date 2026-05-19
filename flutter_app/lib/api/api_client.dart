@@ -30,6 +30,28 @@ class ApiClient {
           headers: const {'Content-Type': 'application/json'},
         )) {
     _dio.interceptors.add(InterceptorsWrapper(
+      onResponse: (r, handler) {
+        // Detect the classic "API_BASE_URL points at the SPA, not the
+        // backend" foot-gun: the request 200'd but returned text/html.
+        // Dio's `data as Map<...>` would otherwise blow up downstream
+        // with a useless TypeError on the HTML body.
+        final ct = r.headers.value('content-type') ?? '';
+        final isJsonRequest =
+            !r.requestOptions.responseType.toString().contains('stream');
+        if (isJsonRequest && ct.startsWith('text/html')) {
+          handler.reject(DioException(
+            requestOptions: r.requestOptions,
+            response: r,
+            error: ApiException(
+              'API returned HTML instead of JSON. Is API_BASE_URL pointing at '
+              'the backend? Got ${r.requestOptions.uri}',
+              statusCode: r.statusCode,
+            ),
+          ));
+          return;
+        }
+        handler.next(r);
+      },
       onError: (e, handler) {
         final msg = _extractError(e);
         handler.reject(DioException(
