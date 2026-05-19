@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -84,6 +84,12 @@ if _web_dir.exists() and (_web_dir / "index.html").exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa(full_path: str):
+        # Critical: never serve the SPA shell for API paths. Without this
+        # guard a typo like /api/jobsstats would fall through to index.html
+        # and the Dio client would TypeError trying to parse HTML as JSON.
+        # An honest JSON 404 is the right answer.
+        if full_path.startswith("api/") or full_path == "api":
+            raise HTTPException(404, f"No API route at /{full_path}")
         # Serve any file present in the build, falling back to the SPA shell
         # so Flutter's client-side router can take over for unknown paths.
         # The /assets prefix is shared between Flutter's static asset
