@@ -22,6 +22,10 @@ class PipelineBase(BaseModel):
     transform: dict[str, Any] = Field(default_factory=dict)
     schedule: str | None = None
     enabled: bool = True
+    incremental_field: str | None = None
+    # Columns that identify a row at the destination, used by MERGE-capable
+    # destinations when ``mode`` is ``upsert``. Ignored otherwise.
+    key_columns: list[str] = Field(default_factory=list)
 
 
 class PipelineCreate(PipelineBase):
@@ -38,10 +42,14 @@ class PipelineUpdate(BaseModel):
     transform: dict[str, Any] | None = None
     schedule: str | None = None
     enabled: bool | None = None
+    incremental_field: str | None = None
+    key_columns: list[str] | None = None
 
 
 class PipelineOut(PipelineBase):
     id: str
+    definition_source: str = "ui"
+    definition_path: str | None = None
     created_at: datetime
     updated_at: datetime
 

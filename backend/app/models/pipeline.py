@@ -1,27 +1,35 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import JSON, DateTime, String, func
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.db.session import Base
+from pydantic import BaseModel, Field
 
 
-class Pipeline(Base):
-    __tablename__ = "pipelines"
+class Pipeline(BaseModel):
+    """One source-object → destination-object materialisation rule."""
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    description: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    source_connection_id: Mapped[str] = mapped_column(String(36), index=True)
-    destination_connection_id: Mapped[str] = mapped_column(String(36), index=True)
-    source_object: Mapped[str] = mapped_column(String(255))
-    destination_object: Mapped[str] = mapped_column(String(255))
-    mode: Mapped[str] = mapped_column(String(32), default="full")  # full | incremental
-    field_mappings: Mapped[list] = mapped_column(JSON, default=list)
-    transform: Mapped[dict] = mapped_column(JSON, default=dict)
-    schedule: Mapped[str | None] = mapped_column(String(64), nullable=True)  # cron
-    enabled: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    id: str
+    name: str
+    description: str | None = None
+    source_connection_id: str
+    destination_connection_id: str
+    source_object: str
+    destination_object: str
+    mode: str = "full"  # full | incremental | upsert
+    field_mappings: list[dict[str, Any]] = Field(default_factory=list)
+    transform: dict[str, Any] = Field(default_factory=dict)
+    schedule: str | None = None  # cron expression
+    enabled: bool = True
+    incremental_field: str | None = None
+    # Columns that uniquely identify a row at the destination. Required
+    # for ``mode="upsert"`` against MERGE-capable destinations; ignored
+    # otherwise.
+    key_columns: list[str] = Field(default_factory=list)
+    # "ui" pipelines are editable through the UI; "yaml" pipelines are
+    # reloaded from disk and overwrite any manual edits next time the
+    # loader runs.
+    definition_source: str = "ui"
+    definition_path: str | None = None
+    created_at: datetime
+    updated_at: datetime

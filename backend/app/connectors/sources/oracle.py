@@ -78,7 +78,12 @@ class OracleSource(SourceConnector):
             return []
 
     async def read(
-        self, object_name: str, *, batch_size: int = 1000, since: str | None = None
+        self,
+        object_name: str,
+        *,
+        batch_size: int = 1000,
+        since: str | None = None,
+        **_: Any,
     ) -> AsyncIterator[list[dict[str, Any]]]:
         schema = self.config.get("schema") or self.secrets["user"].upper()
         qualified = f'"{schema.upper()}"."{object_name}"'

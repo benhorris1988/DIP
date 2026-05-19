@@ -1,10 +1,10 @@
+from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.db.session import Base
+from pydantic import BaseModel, Field
 
 
 class JobStatus(str, Enum):
@@ -15,20 +15,19 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class Job(Base):
-    __tablename__ = "jobs"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    pipeline_id: Mapped[str] = mapped_column(String(36), index=True)
-    pipeline_name: Mapped[str] = mapped_column(String(255))
-    status: Mapped[str] = mapped_column(String(32), default=JobStatus.PENDING.value)
-    rows_read: Mapped[int] = mapped_column(Integer, default=0)
-    rows_written: Mapped[int] = mapped_column(Integer, default=0)
-    rows_failed: Mapped[int] = mapped_column(Integer, default=0)
-    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
-    triggered_by: Mapped[str] = mapped_column(String(64), default="manual")
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    log: Mapped[list] = mapped_column(JSON, default=list)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+class Job(BaseModel):
+    id: str
+    pipeline_id: str
+    pipeline_name: str
+    status: str = JobStatus.PENDING.value
+    rows_read: int = 0
+    rows_written: int = 0
+    rows_failed: int = 0
+    duration_ms: int = 0
+    triggered_by: str = "manual"
+    error: str | None = None
+    log: list[dict[str, Any]] = Field(default_factory=list)
+    dag_run_id: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    created_at: datetime

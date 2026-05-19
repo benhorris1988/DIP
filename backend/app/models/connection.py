@@ -1,24 +1,22 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import JSON, DateTime, String, func
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.db.session import Base
+from pydantic import BaseModel, Field
 
 
-class Connection(Base):
-    __tablename__ = "connections"
+class Connection(BaseModel):
+    """A configured link to an external source or destination system."""
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    description: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    connector_type: Mapped[str] = mapped_column(String(64), index=True)
-    role: Mapped[str] = mapped_column(String(16))  # "source" | "destination"
-    config: Mapped[dict] = mapped_column(JSON, default=dict)
-    secrets: Mapped[dict] = mapped_column(JSON, default=dict)
-    status: Mapped[str] = mapped_column(String(32), default="unknown")
-    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    id: str
+    name: str
+    description: str | None = None
+    connector_type: str
+    role: str  # "source" | "destination"
+    config: dict[str, Any] = Field(default_factory=dict)
+    secrets: dict[str, Any] = Field(default_factory=dict)
+    status: str = "unknown"
+    last_tested_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
