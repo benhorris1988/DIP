@@ -29,6 +29,7 @@ class Job(Base):
     triggered_by: Mapped[str] = mapped_column(String(64), default="manual")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     log: Mapped[list] = mapped_column(JSON, default=list)
+    dag_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

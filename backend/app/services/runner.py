@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors import registry
 from app.connectors.base import DestinationConnector, SourceConnector
-from app.models import Connection, Job, JobStatus, Pipeline
+from app.models import Asset, AssetMaterialization, Connection, Job, JobStatus, Pipeline
+from app.schemas.job import JobOut
+from app.services.events import bus
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,17 @@ def _apply_mapping(record: dict, mappings: list[dict]) -> dict:
         if src and dst and src in record:
             out[dst] = record[src]
     return out
+
+
+def _snapshot(job: Job) -> dict:
+    return JobOut.model_validate(job).model_dump(mode="json")
+
+
+async def _publish(job: Job) -> None:
+    try:
+        await bus.publish(_snapshot(job))
+    except Exception:  # noqa: BLE001
+        logger.debug("Failed to publish job event", exc_info=True)
 
 
 async def run_pipeline(
@@ -53,11 +66,15 @@ async def run_pipeline(
     db.add(job)
     await db.commit()
     await db.refresh(job)
+    await _publish(job)
 
     log: list[dict] = []
 
-    def _log(msg: str, level: str = "info") -> None:
+    async def _log(msg: str, level: str = "info") -> None:
         log.append({"ts": datetime.utcnow().isoformat(), "level": level, "message": msg})
+        # Snapshot the in-progress log so subscribers see streamed updates
+        job.log = list(log)
+        await _publish(job)
 
     started = time.monotonic()
     rows_read = 0
@@ -69,7 +86,7 @@ async def run_pipeline(
         destination: DestinationConnector = registry.instance(  # type: ignore[assignment]
             dst_conn.connector_type, dst_conn.config, dst_conn.secrets
         )
-        _log(
+        await _log(
             f"Starting {pipeline.name}: "
             f"{src_conn.connector_type}:{pipeline.source_object} -> "
             f"{dst_conn.connector_type}:{pipeline.destination_object}"
@@ -83,14 +100,34 @@ async def run_pipeline(
                 pipeline.destination_object, mapped, mode="upsert"
             )
             rows_written += written
-            _log(f"Batch processed: read={len(batch)} written={written}")
+            # Update counters before logging so the event payload is consistent
+            job.rows_read = rows_read
+            job.rows_written = rows_written
+            await _log(f"Batch processed: read={len(batch)} written={written}")
 
         job.status = JobStatus.SUCCEEDED.value
-        _log("Pipeline completed successfully")
+        await _log("Pipeline completed successfully")
+        # Record asset materializations for any assets produced by this
+        # pipeline. DAG-driven runs do this themselves to attach a
+        # ``dag_run_id``; the no-op here is harmless.
+        if job.dag_run_id is None:
+            assets = (
+                await db.execute(select(Asset).where(Asset.pipeline_id == pipeline.id))
+            ).scalars().all()
+            for a in assets:
+                db.add(
+                    AssetMaterialization(
+                        id=str(uuid.uuid4()),
+                        asset_key=a.key,
+                        job_id=job.id,
+                        pipeline_id=pipeline.id,
+                        rows_written=rows_written,
+                    )
+                )
     except Exception as exc:  # noqa: BLE001
         job.status = JobStatus.FAILED.value
         job.error = f"{type(exc).__name__}: {exc}"
-        _log(job.error, level="error")
+        await _log(job.error, level="error")
         logger.exception("Pipeline %s failed", pipeline.name)
     finally:
         job.rows_read = rows_read
@@ -100,4 +137,5 @@ async def run_pipeline(
         job.log = log
         await db.commit()
         await db.refresh(job)
+        await _publish(job)
     return job

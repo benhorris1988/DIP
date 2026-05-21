@@ -22,6 +22,7 @@ class PipelineBase(BaseModel):
     transform: dict[str, Any] = Field(default_factory=dict)
     schedule: str | None = None
     enabled: bool = True
+    incremental_field: str | None = None
 
 
 class PipelineCreate(PipelineBase):
@@ -38,10 +39,13 @@ class PipelineUpdate(BaseModel):
     transform: dict[str, Any] | None = None
     schedule: str | None = None
     enabled: bool | None = None
+    incremental_field: str | None = None
 
 
 class PipelineOut(PipelineBase):
     id: str
+    definition_source: str = "ui"
+    definition_path: str | None = None
     created_at: datetime
     updated_at: datetime
 

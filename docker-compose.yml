@@ -5,26 +5,19 @@ services:
       - "8000:8000"
     environment:
       - DIP_DATABASE_URL=sqlite+aiosqlite:///./dip.db
-      - DIP_CORS_ORIGINS=["http://localhost:5173"]
+      # CORS for `flutter run -d chrome` (5173 is Flutter's default web port too)
+      - DIP_CORS_ORIGINS=["http://localhost:5173","http://localhost:3000","http://localhost:8080"]
     volumes:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "5173:5173"
-    environment:
-      - VITE_API_URL=http://localhost:8000
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm run dev -- --host 0.0.0.0
-    depends_on:
-      - backend
 
   surrealdb:
     image: surrealdb/surrealdb:latest
     command: start --user root --pass root memory
     ports:
       - "8001:8000"
+
+# The Flutter operator console runs locally — see flutter_app/README.md for
+# `flutter run -d chrome`, iOS, and Android instructions. Production web
+# builds are produced with `flutter build web` and can be served behind any
+# static host or behind the FastAPI app.

@@ -9,6 +9,7 @@ settings = get_settings()
 
 engine = create_async_engine(settings.database_url, echo=False, future=True)
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async_session = SessionLocal
 
 
 class Base(DeclarativeBase):
@@ -21,7 +22,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    from app.models import connection, job, pipeline  # noqa: F401
+    from app.models import asset, connection, job, pipeline  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
