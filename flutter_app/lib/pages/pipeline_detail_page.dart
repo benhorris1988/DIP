@@ -496,7 +496,31 @@ class _ConfigTab extends StatelessWidget {
         }
       }
     }
+    if (p.transformSteps.isNotEmpty) {
+      b.writeln('transform:');
+      b.writeln('  on_error: ${p.onError}');
+      b.writeln('  steps:');
+      for (final s in p.transformSteps) {
+        b.writeln('    - type: ${s.type}${s.enabled ? '' : '   # disabled'}');
+        if (s.config.isNotEmpty) {
+          final cfg = s.config.entries
+              .map((e) => '${e.key}: ${_yamlScalar(e.value)}')
+              .join(', ');
+          b.writeln('      config: {$cfg}');
+        }
+      }
+    }
     return b.toString();
+  }
+
+  String _yamlScalar(dynamic v) {
+    if (v is String) {
+      final needsQuote =
+          v.contains(RegExp(r'[:#\n{}\[\]]')) || v.trim() != v || v.isEmpty;
+      if (needsQuote) return '"${v.replaceAll('"', '\\"').replaceAll('\n', '\\n')}"';
+      return v;
+    }
+    return '$v';
   }
 }
 

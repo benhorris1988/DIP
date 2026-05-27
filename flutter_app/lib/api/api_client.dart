@@ -87,6 +87,14 @@ class ApiClient {
         .toList();
   }
 
+  // Transform catalog
+  Future<List<TransformCatalogEntry>> transforms() async {
+    final r = await _dio.get('/transforms');
+    return (r.data as List)
+        .map((e) => TransformCatalogEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   // Connections
   Future<List<Connection>> connections({String? role}) async {
     final r = await _dio.get('/connections',

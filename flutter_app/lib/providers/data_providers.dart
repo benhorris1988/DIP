@@ -9,6 +9,11 @@ final connectorsProvider = FutureProvider<List<ConnectorMetadata>>((ref) async {
   return ref.read(apiClientProvider).connectors();
 });
 
+final transformsCatalogProvider =
+    FutureProvider<List<TransformCatalogEntry>>((ref) async {
+  return ref.read(apiClientProvider).transforms();
+});
+
 final connectionsProvider = FutureProvider<List<Connection>>((ref) async {
   return ref.read(apiClientProvider).connections();
 });

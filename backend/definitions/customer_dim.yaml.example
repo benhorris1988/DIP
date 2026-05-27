@@ -23,6 +23,26 @@ pipeline:
     - source: Country
       destination: country_code
       transform: upper
+  # Optional in-flight transformation plan, applied to each batch after the
+  # field mappings and before the write. Steps run top-to-bottom. The same
+  # steps are editable through the drag-and-drop builder in the pipeline UI.
+  transform:
+    on_error: skip        # skip = drop+log bad rows; fail = abort the run
+    steps:
+      - type: cast
+        config: {column: customer_key, to: string}
+      - type: fill_null
+        config: {column: country_code, value: "ZZ"}
+      - type: set_constant
+        config: {column: source_system, value: SAP}
+      - type: python_column
+        config:
+          column: customer_name
+          # `value` is the current cell, `row` is the whole record
+          code: "(value or '').strip().title()"
+      - type: filter
+        config:
+          code: "bool((row.get('customer_key') or '').strip())"
 
 assets:
   - key: dim_customer

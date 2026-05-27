@@ -56,6 +56,26 @@ class FieldMappingSpec(BaseModel):
     transform: str | None = None
 
 
+class TransformStepSpec(BaseModel):
+    type: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class TransformSpec(BaseModel):
+    """In-flight transformation plan applied to each batch before write."""
+
+    on_error: str = Field(default="skip")
+    steps: list[TransformStepSpec] = Field(default_factory=list)
+
+    @field_validator("on_error")
+    @classmethod
+    def _valid_on_error(cls, v: str) -> str:
+        if v not in {"skip", "fail"}:
+            raise ValueError(f"invalid on_error: {v} (expected 'skip' or 'fail')")
+        return v
+
+
 class PipelineSpec(BaseModel):
     name: str
     description: str | None = None
@@ -65,6 +85,7 @@ class PipelineSpec(BaseModel):
     source: SourceSpec
     destination: DestinationSpec
     field_mappings: list[FieldMappingSpec] = Field(default_factory=list)
+    transform: TransformSpec | None = None
 
     @field_validator("mode")
     @classmethod
@@ -314,6 +335,9 @@ async def load_definitions(db: AsyncSession) -> LoadReport:
             existing.enabled = defn.pipeline.enabled
             existing.incremental_field = defn.pipeline.source.incremental_field
             existing.field_mappings = [m.model_dump(exclude_none=True) for m in defn.pipeline.field_mappings]
+            existing.transform = (
+                defn.pipeline.transform.model_dump() if defn.pipeline.transform else {}
+            )
             existing.definition_source = "yaml"
             existing.definition_path = str(path)
             seen_names.add(defn.pipeline.name)

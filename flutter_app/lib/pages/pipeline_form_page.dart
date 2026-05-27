@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../api/models.dart';
 import '../providers/data_providers.dart';
 import '../theme/app_theme.dart';
+import '../widgets/transform_builder.dart';
 import '../widgets/ui/bifrost_button.dart';
 
 class PipelineFormPage extends ConsumerStatefulWidget {
@@ -26,6 +27,9 @@ class _PipelineFormPageState extends ConsumerState<PipelineFormPage> {
   String _mode = 'full';
   bool _enabled = true;
   final List<FieldMapping> _mappings = [];
+  List<TransformStep> _transformSteps = [];
+  String _onError = 'skip';
+  bool _pipelineLoaded = false;
   bool _saving = false;
   String? _error;
 
@@ -34,7 +38,9 @@ class _PipelineFormPageState extends ConsumerState<PipelineFormPage> {
   @override
   void initState() {
     super.initState();
-    if (_isEdit) {
+    if (!_isEdit) {
+      _pipelineLoaded = true;
+    } else {
       Future.microtask(() async {
         final p = await ref.read(apiClientProvider).pipeline(widget.id!);
         if (!mounted) return;
@@ -51,6 +57,9 @@ class _PipelineFormPageState extends ConsumerState<PipelineFormPage> {
         _mappings
           ..clear()
           ..addAll(p.fieldMappings);
+        _transformSteps = List.of(p.transformSteps);
+        _onError = p.onError;
+        _pipelineLoaded = true;
         setState(() {});
       });
     }
@@ -59,6 +68,7 @@ class _PipelineFormPageState extends ConsumerState<PipelineFormPage> {
   @override
   Widget build(BuildContext context) {
     final connections = ref.watch(connectionsProvider);
+    final catalog = ref.watch(transformsCatalogProvider);
     return Padding(
       padding: const EdgeInsets.all(20),
       child: connections.when(
@@ -218,12 +228,72 @@ class _PipelineFormPageState extends ConsumerState<PipelineFormPage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Empty list = pass through all source fields. Supported transforms: upper, lower, trim.',
+                        'Empty list = pass through all source fields. Per-mapping transforms: upper, lower, trim.',
                         style: context.th.textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
                       for (var i = 0; i < _mappings.length; i++)
                         _mappingRow(i),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Transformations',
+                          style: context.th.textTheme.titleSmall),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Reshape records in-flight: rename, change types, derive '
+                        'columns, run small bits of Python, and filter rows. Steps '
+                        'run top-to-bottom after the field mappings — drag to reorder.',
+                        style: context.th.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      catalog.when(
+                        loading: () => const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Center(
+                            child: SizedBox(
+                              height: 20,
+                              width: 20,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        ),
+                        error: (e, _) => Text(
+                          'Could not load transformations: $e',
+                          style: TextStyle(color: context.cs.error),
+                        ),
+                        data: (cat) => (_isEdit && !_pipelineLoaded)
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Center(
+                                  child: SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  ),
+                                ),
+                              )
+                            : TransformBuilder(
+                                key: ValueKey('tb-${widget.id ?? 'new'}'),
+                                catalog: cat,
+                                initialSteps: _transformSteps,
+                                initialOnError: _onError,
+                                onChanged: (steps, onError) {
+                                  _transformSteps = steps;
+                                  _onError = onError;
+                                },
+                              ),
+                      ),
                     ],
                   ),
                 ),
@@ -341,6 +411,10 @@ class _PipelineFormPageState extends ConsumerState<PipelineFormPage> {
           _incremental.text.trim().isEmpty ? null : _incremental.text.trim(),
       'field_mappings':
           _mappings.where((m) => m.source.isNotEmpty).map((m) => m.toJson()).toList(),
+      'transform': {
+        'on_error': _onError,
+        'steps': _transformSteps.map((s) => s.toJson()).toList(),
+      },
     };
     try {
       final api = ref.read(apiClientProvider);
