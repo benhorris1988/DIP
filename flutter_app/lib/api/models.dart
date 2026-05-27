@@ -38,11 +38,15 @@ class ConnectorMetadata {
         role: j['role'] as String,
         description: (j['description'] ?? '') as String,
         icon: (j['icon'] ?? 'plug') as String,
-        configFields: (j['config_fields'] as List? ?? [])
+        // Backend serialises the connector metadata dataclass, so the keys are
+        // `config_schema` / `secret_schema`. Secret-schema fields are always
+        // rendered as obscured credential inputs.
+        configFields: (j['config_schema'] as List? ?? [])
             .map((e) => ConfigField.fromJson(e as Map<String, dynamic>))
             .toList(),
-        credentialFields: (j['credential_fields'] as List? ?? [])
-            .map((e) => ConfigField.fromJson(e as Map<String, dynamic>))
+        credentialFields: (j['secret_schema'] as List? ?? [])
+            .map((e) =>
+                ConfigField.fromJson(e as Map<String, dynamic>, secret: true))
             .toList(),
       );
 }
@@ -53,6 +57,7 @@ class ConfigField {
   final String type;
   final bool required;
   final String? helpText;
+  final String? placeholder;
   final dynamic defaultValue;
   final List<String>? options;
   final bool secret;
@@ -63,21 +68,26 @@ class ConfigField {
     required this.type,
     required this.required,
     this.helpText,
+    this.placeholder,
     this.defaultValue,
     this.options,
     this.secret = false,
   });
 
-  factory ConfigField.fromJson(Map<String, dynamic> j) => ConfigField(
-        name: j['name'] as String,
-        label: j['label'] as String,
-        type: (j['type'] ?? 'string') as String,
-        required: (j['required'] ?? false) as bool,
-        helpText: j['help_text'] as String?,
-        defaultValue: j['default'],
-        options: (j['options'] as List?)?.map((e) => e.toString()).toList(),
-        secret: (j['secret'] ?? false) as bool,
-      );
+  factory ConfigField.fromJson(Map<String, dynamic> j, {bool secret = false}) {
+    final type = (j['type'] ?? 'string') as String;
+    return ConfigField(
+      name: j['name'] as String,
+      label: j['label'] as String,
+      type: type,
+      required: (j['required'] ?? false) as bool,
+      helpText: (j['help_text'] ?? j['help']) as String?,
+      placeholder: j['placeholder'] as String?,
+      defaultValue: j['default'],
+      options: (j['options'] as List?)?.map((e) => e.toString()).toList(),
+      secret: secret || type == 'password',
+    );
+  }
 }
 
 class Connection {
@@ -142,6 +152,42 @@ class FieldMapping {
       };
 }
 
+/// A single transformation step in a pipeline's transform plan.
+class TransformStep {
+  final String type;
+  final Map<String, dynamic> config;
+  final bool enabled;
+
+  TransformStep({
+    required this.type,
+    Map<String, dynamic>? config,
+    this.enabled = true,
+  }) : config = config ?? <String, dynamic>{};
+
+  TransformStep copyWith({
+    String? type,
+    Map<String, dynamic>? config,
+    bool? enabled,
+  }) =>
+      TransformStep(
+        type: type ?? this.type,
+        config: config ?? Map<String, dynamic>.from(this.config),
+        enabled: enabled ?? this.enabled,
+      );
+
+  factory TransformStep.fromJson(Map<String, dynamic> j) => TransformStep(
+        type: j['type'] as String,
+        config: Map<String, dynamic>.from(j['config'] as Map? ?? const {}),
+        enabled: (j['enabled'] ?? true) as bool,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'config': config,
+        'enabled': enabled,
+      };
+}
+
 class Pipeline {
   final String id;
   final String name;
@@ -155,6 +201,8 @@ class Pipeline {
   final bool enabled;
   final String? incrementalField;
   final List<FieldMapping> fieldMappings;
+  final List<TransformStep> transformSteps;
+  final String onError; // "skip" | "fail"
   final String definitionSource;
   final String? definitionPath;
   final String createdAt;
@@ -173,6 +221,8 @@ class Pipeline {
     required this.enabled,
     required this.incrementalField,
     required this.fieldMappings,
+    required this.transformSteps,
+    required this.onError,
     required this.definitionSource,
     required this.definitionPath,
     required this.createdAt,
@@ -181,25 +231,100 @@ class Pipeline {
 
   bool get isYamlManaged => definitionSource == 'yaml';
 
-  factory Pipeline.fromJson(Map<String, dynamic> j) => Pipeline(
-        id: j['id'] as String,
+  factory Pipeline.fromJson(Map<String, dynamic> j) {
+    final transform = Map<String, dynamic>.from(j['transform'] as Map? ?? const {});
+    return Pipeline(
+      id: j['id'] as String,
+      name: j['name'] as String,
+      description: j['description'] as String?,
+      sourceConnectionId: j['source_connection_id'] as String,
+      sourceObject: j['source_object'] as String,
+      destinationConnectionId: j['destination_connection_id'] as String,
+      destinationObject: j['destination_object'] as String,
+      mode: j['mode'] as String,
+      schedule: j['schedule'] as String?,
+      enabled: (j['enabled'] ?? true) as bool,
+      incrementalField: j['incremental_field'] as String?,
+      fieldMappings: (j['field_mappings'] as List? ?? [])
+          .map((e) => FieldMapping.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      transformSteps: (transform['steps'] as List? ?? const [])
+          .map((e) => TransformStep.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      onError: (transform['on_error'] ?? 'skip') as String,
+      definitionSource: (j['definition_source'] ?? 'ui') as String,
+      definitionPath: j['definition_path'] as String?,
+      createdAt: (j['created_at'] ?? '') as String,
+      updatedAt: (j['updated_at'] ?? '') as String,
+    );
+  }
+}
+
+/// Metadata describing a single config field of a transform type.
+class TransformFieldSpec {
+  final String name;
+  final String label;
+  final String type; // string | text | code | select | boolean | columns
+  final bool required;
+  final String? placeholder;
+  final String? help;
+  final List<String>? options;
+  final dynamic defaultValue;
+
+  TransformFieldSpec({
+    required this.name,
+    required this.label,
+    required this.type,
+    required this.required,
+    this.placeholder,
+    this.help,
+    this.options,
+    this.defaultValue,
+  });
+
+  factory TransformFieldSpec.fromJson(Map<String, dynamic> j) => TransformFieldSpec(
         name: j['name'] as String,
-        description: j['description'] as String?,
-        sourceConnectionId: j['source_connection_id'] as String,
-        sourceObject: j['source_object'] as String,
-        destinationConnectionId: j['destination_connection_id'] as String,
-        destinationObject: j['destination_object'] as String,
-        mode: j['mode'] as String,
-        schedule: j['schedule'] as String?,
-        enabled: (j['enabled'] ?? true) as bool,
-        incrementalField: j['incremental_field'] as String?,
-        fieldMappings: (j['field_mappings'] as List? ?? [])
-            .map((e) => FieldMapping.fromJson(e as Map<String, dynamic>))
+        label: j['label'] as String,
+        type: (j['type'] ?? 'string') as String,
+        required: (j['required'] ?? false) as bool,
+        placeholder: j['placeholder'] as String?,
+        help: j['help'] as String?,
+        options: (j['options'] as List?)?.map((e) => e.toString()).toList(),
+        defaultValue: j['default'],
+      );
+}
+
+/// Catalog entry for an available transform type (drives the builder UI).
+class TransformCatalogEntry {
+  final String type;
+  final String label;
+  final String category; // schema | values | python | rows
+  final String icon;
+  final String description;
+  final List<TransformFieldSpec> fields;
+  final String? example;
+
+  TransformCatalogEntry({
+    required this.type,
+    required this.label,
+    required this.category,
+    required this.icon,
+    required this.description,
+    required this.fields,
+    this.example,
+  });
+
+  factory TransformCatalogEntry.fromJson(Map<String, dynamic> j) =>
+      TransformCatalogEntry(
+        type: j['type'] as String,
+        label: j['label'] as String,
+        category: (j['category'] ?? 'values') as String,
+        icon: (j['icon'] ?? 'transform') as String,
+        description: (j['description'] ?? '') as String,
+        fields: (j['fields'] as List? ?? const [])
+            .map((e) => TransformFieldSpec.fromJson(e as Map<String, dynamic>))
             .toList(),
-        definitionSource: (j['definition_source'] ?? 'ui') as String,
-        definitionPath: j['definition_path'] as String?,
-        createdAt: (j['created_at'] ?? '') as String,
-        updatedAt: (j['updated_at'] ?? '') as String,
+        example: j['example'] as String?,
       );
 }
 

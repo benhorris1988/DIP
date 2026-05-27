@@ -15,6 +15,7 @@ from app.api.routes import (
     definitions,
     jobs,
     pipelines,
+    transforms,
 )
 from app.config import get_settings
 from app.db.session import async_session, init_db
@@ -63,6 +64,7 @@ app.add_middleware(
 app.include_router(connectors.router, prefix="/api")
 app.include_router(connections.router, prefix="/api")
 app.include_router(pipelines.router, prefix="/api")
+app.include_router(transforms.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(assets.router, prefix="/api")
 app.include_router(dag_runs.router, prefix="/api")

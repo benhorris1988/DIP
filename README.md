@@ -27,11 +27,46 @@ monitor every job run from a single console.
   operator console: Dashboard, Pipelines, Pipeline Detail, Connections, Job
   Runs, Error Explorer, Settings. See [`flutter_app/README.md`](flutter_app/README.md).
 * **Connectors today**
-  * Sources: `sap_odata`, `oracle`
-  * Destinations: `surrealdb`, `mssql`
-* **Roadmap connectors** — Microsoft Fabric, Databricks, Snowflake, generic
-  REST/Webhook, S3/Blob. Adding one is a single file under
-  `backend/app/connectors/{sources,destinations}/`.
+  * Sources: `sap_odata`, `oracle`, `mssql_source` (Microsoft SQL Server)
+  * Destinations: `surrealdb`, `mssql` (Microsoft SQL Server), `fabric_warehouse`,
+    `databricks_sql`
+* **Roadmap connectors** — Snowflake, generic REST/Webhook, S3/Blob. Adding one
+  is a single file under `backend/app/connectors/{sources,destinations}/`.
+
+## Transformations
+
+Pipelines can reshape records in-flight between the source and destination. A
+pipeline carries an ordered **transform plan** (`Pipeline.transform`) that runs
+on every batch after the field mappings and before the write. Build it visually
+with the drag-and-drop editor on the pipeline form, or declare it in YAML.
+
+Available step types (see `GET /api/transforms` for the live catalog, config
+fields and inline code examples that power the builder UI):
+
+| Category | Steps |
+| -------- | ----- |
+| Schema   | `rename`, `drop`, `select` |
+| Values   | `cast`, `string_op`, `replace`, `fill_null`, `set_constant`, `concat` |
+| Python   | `python_column` (expression per cell), `python_row` (statements on the row) |
+| Rows     | `filter` (keep rows where a Python expression is true) |
+
+The `python_*` / `filter` steps run small snippets of Python in a restricted
+namespace (limited builtins, a few safe modules, no `import`). This is **not** a
+security sandbox — only operators trusted to define pipelines can author them.
+
+### Error handling
+
+Each plan has an `on_error` policy:
+
+* `skip` (default) — a row that fails a transform or that the destination
+  rejects is dropped, counted in the job's `rows_failed`, and logged as an
+  `error` entry. The run still completes.
+* `fail` — the first bad row aborts the whole run.
+
+Batch writes that raise are automatically retried row-by-row so a single bad
+record doesn't sink the batch. Failed runs and partial (row-level) failures are
+both surfaced in the **Error Explorer**, and every job's log stream shows the
+captured error samples.
 
 ## Extending with a new connector
 
@@ -117,6 +152,7 @@ All endpoints are mounted at `/api`:
 | ------ | --------------------------------- | -------------------------------- |
 | GET    | `/api/health`                     | Health check                     |
 | GET    | `/api/connectors`                 | List installed connector types   |
+| GET    | `/api/transforms`                 | Catalog of transformation steps  |
 | GET    | `/api/connections`                | List connections                 |
 | POST   | `/api/connections`                | Create connection                |
 | POST   | `/api/connections/{id}/test`      | Probe the underlying system      |

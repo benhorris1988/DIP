@@ -24,6 +24,7 @@ class _ErrorExplorerPageState extends ConsumerState<ErrorExplorerPage> {
   Widget build(BuildContext context) {
     final failed =
         ref.watch(jobsProvider(const JobsQuery(status: 'failed', limit: 500)));
+    final recent = ref.watch(jobsProvider(const JobsQuery(limit: 500)));
     final pipelines = ref.watch(pipelinesProvider);
 
     return Padding(
@@ -33,7 +34,8 @@ class _ErrorExplorerPageState extends ConsumerState<ErrorExplorerPage> {
         children: [
           Text('Error explorer', style: context.th.textTheme.titleLarge),
           Text(
-            'Failed batches grouped by error class with full-text search.',
+            'Failed runs and partial (row-level) failures, grouped by error '
+            'class with full-text search.',
             style: context.th.textTheme.bodySmall,
           ),
           const SizedBox(height: 16),
@@ -72,7 +74,15 @@ class _ErrorExplorerPageState extends ConsumerState<ErrorExplorerPage> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('$e')),
               data: (all) {
-                final rows = all.where((j) {
+                // Merge fully-failed runs with successful runs that still had
+                // row-level failures (skip policy), de-duplicated by id.
+                final byId = {for (final j in all) j.id: j};
+                for (final j in (recent.value ?? const <Job>[])) {
+                  if (j.status != 'failed' && j.rowsFailed > 0) {
+                    byId.putIfAbsent(j.id, () => j);
+                  }
+                }
+                final rows = byId.values.where((j) {
                   if (_pipelineId != null && j.pipelineId != _pipelineId) {
                     return false;
                   }
@@ -84,7 +94,9 @@ class _ErrorExplorerPageState extends ConsumerState<ErrorExplorerPage> {
                     if (!hit) return false;
                   }
                   return true;
-                }).toList();
+                }).toList()
+                  ..sort((a, b) =>
+                      (b.startedAt ?? '').compareTo(a.startedAt ?? ''));
                 if (rows.isEmpty) {
                   return const EmptyState(
                     icon: Icons.report_outlined,
@@ -94,7 +106,9 @@ class _ErrorExplorerPageState extends ConsumerState<ErrorExplorerPage> {
                 }
                 final groups = <String, List<Job>>{};
                 for (final j in rows) {
-                  final key = (j.error ?? 'Unknown error').split(':').first;
+                  final key = j.status == 'failed'
+                      ? (j.error ?? 'Unknown error').split(':').first
+                      : 'Row-level failures (run completed)';
                   groups.putIfAbsent(key, () => []).add(j);
                 }
                 final entries = groups.entries.toList()
@@ -145,8 +159,6 @@ class _Group extends StatelessWidget {
                         fontFamily: 'JetBrainsMono', fontSize: 12),
                   ),
                 ),
-                StatusPill(status: 'failed'),
-                const SizedBox(width: 8),
                 Text('${jobs.length}', style: context.th.textTheme.titleSmall),
               ],
             ),
@@ -165,22 +177,32 @@ class _Group extends StatelessWidget {
                           style: const TextStyle(
                               fontFamily: 'JetBrainsMono', fontSize: 11)),
                     ),
+                    StatusPill(status: j.status),
+                    const SizedBox(width: 8),
                     SizedBox(
-                      width: 160,
+                      width: 140,
                       child: Text(j.pipelineName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                               fontFamily: 'JetBrainsMono', fontSize: 12)),
                     ),
                     const SizedBox(width: 8),
-                    Text(formatDuration(j.durationMs),
-                        style: context.th.textTheme.bodySmall),
-                    const SizedBox(width: 8),
+                    if (j.rowsFailed > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Text('${j.rowsFailed} failed rows',
+                            style: const TextStyle(
+                                fontFamily: 'JetBrainsMono',
+                                fontSize: 11,
+                                color: Color(0xFFBE123C))),
+                      ),
                     Text(formatDate(j.startedAt),
                         style: context.th.textTheme.bodySmall),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        j.error ?? '',
+                        j.error ?? '${formatNumber(j.rowsWritten)} written',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(

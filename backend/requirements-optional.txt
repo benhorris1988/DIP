@@ -3,7 +3,7 @@
 # C extensions or large transitive deps and may need Visual Studio Build
 # Tools on Windows when no prebuilt wheel exists for your Python version.
 
-# Microsoft SQL Server / Fabric Warehouse destinations
+# Microsoft SQL Server source + destination, and Fabric Warehouse destination
 pyodbc==5.2.0
 
 # Databricks SQL Warehouse destination — pulls pandas + numpy

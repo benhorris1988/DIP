@@ -277,15 +277,17 @@ class _ConnectionFormPageState extends ConsumerState<ConnectionFormPage> {
         ),
       );
     }
+    final numeric = f.type == 'integer' || f.type == 'number';
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
         controller: ctrl,
         obscureText: f.secret,
-        keyboardType: f.type == 'integer' ? TextInputType.number : null,
+        keyboardType: numeric ? TextInputType.number : null,
         decoration: InputDecoration(
           labelText: f.label.toUpperCase(),
           helperText: f.helpText,
+          hintText: f.placeholder,
         ),
       ),
     );
